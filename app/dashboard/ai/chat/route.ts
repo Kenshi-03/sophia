@@ -1,18 +1,16 @@
-import { google } from "@ai-sdk/google"
-import { generateText } from "ai"
+import { generateRouterResponse } from "@/lib/ai/providers/router"
 
 export async function POST(req: Request) {
   try {
     const { query } = await req.json()
 
-    const result = await generateText({
-      model: google("gemini-2.5-flash"),
-
-      prompt: query,
+    const responseText = await generateRouterResponse(query, {
+      provider: "gemini",
+      model: "gemini-2.5-flash",
     })
 
     return Response.json({
-      response: result.text,
+      response: responseText,
     })
   } catch (error) {
     console.error(error)

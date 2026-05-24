@@ -1,22 +1,27 @@
 import { generateGeminiResponse } from "./gemini"
 import { generateGroqResponse } from "./groq"
 import { generateMaiaResponse } from "./maia"
+import { generateOllamaResponse } from "./ollama"
+import { CompletionOptions, AIProvider } from "./types"
 
 export async function generateRouterResponse(
   prompt: string,
-  options?: { systemInstruction?: string; model?: string; provider?: string }
+  options?: CompletionOptions & { provider?: AIProvider }
 ): Promise<string> {
-  const provider = (options?.provider || "").toLowerCase()
-  const model = options?.model
+  const provider = (options?.provider || "groq").toLowerCase() as AIProvider
 
   if (provider === "groq") {
-    return generateGroqResponse(prompt, { systemInstruction: options?.systemInstruction, model })
+    return generateGroqResponse(prompt, options)
   }
 
   if (provider === "maia") {
-    return generateMaiaResponse(prompt, { systemInstruction: options?.systemInstruction, model })
+    return generateMaiaResponse(prompt, options)
   }
 
-  // Default is Gemini
-  return generateGeminiResponse(prompt, { systemInstruction: options?.systemInstruction, model })
+  if (provider === "ollama") {
+    return generateOllamaResponse(prompt, options)
+  }
+
+  // Fallback to Gemini
+  return generateGeminiResponse(prompt, options)
 }

@@ -1,6 +1,8 @@
+import { CompletionOptions } from "./types"
+
 export async function generateGroqResponse(
   prompt: string,
-  options?: { systemInstruction?: string; model?: string }
+  options?: CompletionOptions
 ): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY || ""
   if (!apiKey) {
@@ -26,7 +28,8 @@ export async function generateGroqResponse(
       body: JSON.stringify({
         model: modelName,
         messages: messages,
-        temperature: 0.7,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxOutputTokens,
       }),
     })
 
