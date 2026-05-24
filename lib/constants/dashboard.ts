@@ -1,0 +1,5 @@
+export const DASHBOARD_CONSTANTS = {
+  REFRESH_INTERVAL_MS: 300000, // 5 minutes
+  MAX_RECENT_MEMORIES: 5,
+  MAX_TODAY_EVENTS: 10,
+} as const;

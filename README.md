@@ -1,36 +1,295 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<p align="center">
+  <h1 align="center">SOPHIA v0.0</h1>
+  <p align="center">
+    <strong>Systematic Organization for Personal Higher Information Analysis</strong>
+  </p>
+  <p align="center">
+    Personal Cognitive Operating System · Productivity-first AI Workspace
+  </p>
+</p>
 
-## Getting Started
+---
 
-First, run the development server:
+## Tentang SOPHIA
+
+SOPHIA adalah **Personal Cognitive Operating System** — sebuah workspace futuristik yang tenang dan fokus, dirancang untuk membantu pengguna mengorganisasi pikiran, jadwal, dan produktivitas secara cerdas menggunakan AI.
+
+SOPHIA bukan dashboard admin generik atau template SaaS biasa. SOPHIA adalah sistem produktivitas personal berbasis konteks, dengan arsitektur modular dan estetika **calm futuristic dark workspace**.
+
+### Filosofi Desain
+
+- **Productivity-first** — Setiap elemen UI dirancang untuk mengurangi friction dan meningkatkan fokus
+- **Calm Futuristic** — Dark mode first, glassmorphism panels, muted borders, premium spacing
+- **Modular & Scalable** — Arsitektur komponen yang bisa tumbuh tanpa overengineering
+- **AI-Native** — Integrasi Gemini AI sebagai cognitive companion, bukan gimmick
+
+---
+
+## Tech Stack
+
+| Layer | Teknologi |
+|---|---|
+| **Framework** | [Next.js 16](https://nextjs.org) (App Router, Turbopack) |
+| **Language** | TypeScript 5 |
+| **Styling** | TailwindCSS 4 |
+| **UI Components** | shadcn/ui + Radix UI |
+| **State Management** | Zustand (persisted stores) |
+| **Database** | PostgreSQL + Prisma ORM 7 |
+| **Authentication** | NextAuth.js v5 (Google OAuth) |
+| **AI Engine** | Google Gemini AI (`@google/generative-ai`) |
+| **Calendar** | Google Calendar API (`googleapis`) |
+| **Icons** | Lucide React |
+
+---
+
+## Fitur Utama
+
+### 🏠 Dashboard
+Pusat overview produktivitas dengan bento-grid layout:
+- **Welcome Header** — Sapaan kontekstual berdasarkan waktu
+- **Cognitive Load Indicator** — Visualisasi beban kognitif real-time
+- **Current Focus Card** — Tugas yang sedang dikerjakan
+- **Active Agents Widget** — Status AI agents yang aktif
+- **Integrated Schedule Widget** — Jadwal hari ini dari Google Calendar
+- **Recent Thoughts Widget** — Memory nodes terbaru
+
+### 📅 Calendar Intelligence
+Intelligent productivity calendar terintegrasi Google Calendar:
+- **Calendar Timeline** — Visualisasi timeline harian yang detail
+- **Weekly View** — Overview mingguan dengan event cards
+- **Mini Calendar** — Navigasi kalender kompak
+- **Sync Status Panel** — Status real-time sinkronisasi Google Calendar
+- **Event Details Modal** — Detail event dengan konteks produktivitas
+- **Free Slot Detection** — Identifikasi waktu kosong untuk focus blocks
+
+### 🧠 Memory System
+Sistem penyimpanan pikiran dan pengetahuan personal:
+- **Memory Cards** — Visualisasi memory nodes
+- **Memory Timeline** — Kronologi pikiran dan catatan
+- **Semantic Search** — Pencarian bermakna menggunakan AI
+
+### 📝 Notes
+Sistem pencatatan terintegrasi:
+- **Note Editor** — Editor catatan minimalis
+- **Note Cards** — Tampilan catatan dengan kategori
+- **Quick Note** — Input cepat untuk menangkap ide
+
+### 🤖 AI Workspace
+Multi-agent AI system dengan spesialisasi:
+- **AI Chat Box** — Conversational AI interface
+- **Agent Selector** — Pilih AI agent berdasarkan konteks tugas
+- **AI Command Input** — Input perintah cepat ke AI
+- **Recommendation Cards** — Saran produktivitas dari AI
+- **AI Orchestration** — Context manager, router, dan response generator
+
+### ⚙️ Settings & Configuration
+Control center konfigurasi SOPHIA:
+- **General Settings** — Nama, model AI, threshold cognitive load, DND
+- **Google Sync Settings** — Konfigurasi sinkronisasi Google Calendar
+- **Theme Settings** — Aksen warna tema gelap kustom (Sophia Lavender, Cyber Mint, Steel Blue)
+- **System Status** — Diagnostik latensi database, AI API, dan status server
+
+---
+
+## Arsitektur Proyek
+
+```
+sophia/
+├── app/
+│   ├── api/                    # API Routes
+│   │   ├── ai/                 # AI endpoints (chat, planner, recommendation)
+│   │   ├── calendar/           # Calendar endpoints (sync, today, weekly)
+│   │   ├── google/             # Google OAuth callback
+│   │   └── memory/             # Memory endpoints (recent, save, search)
+│   ├── dashboard/              # Dashboard pages
+│   │   ├── ai/                 # AI workspace page
+│   │   ├── analytics/          # Analytics page
+│   │   ├── calendar/           # Calendar intelligence page
+│   │   ├── memory/             # Memory system page
+│   │   ├── notes/              # Notes page
+│   │   ├── settings/           # Settings & configuration page
+│   │   ├── layout.tsx          # Dashboard shell layout
+│   │   └── page.tsx            # Main dashboard overview
+│   ├── login/                  # Authentication page
+│   ├── globals.css             # Global styles & design tokens
+│   ├── layout.tsx              # Root layout
+│   └── page.tsx                # Landing / redirect
+│
+├── components/
+│   ├── ai/                     # AI workspace components
+│   ├── calendar/               # Calendar intelligence components
+│   ├── dashboard/              # Dashboard widgets & layout
+│   ├── memory/                 # Memory system components
+│   ├── notes/                  # Notes components
+│   ├── settings/               # Settings panel components
+│   ├── shared/                 # Reusable shared components
+│   └── ui/                     # shadcn/ui primitives
+│
+├── lib/
+│   ├── ai/                     # AI engine (Gemini, orchestration, prompts)
+│   ├── auth/                   # Authentication (NextAuth config, session)
+│   ├── constants/              # App constants
+│   ├── db/                     # Database (Prisma client)
+│   ├── google/                 # Google integration (Calendar, OAuth)
+│   └── utils/                  # Utility functions
+│
+├── stores/                     # Zustand state stores
+│   ├── use-ai-store.ts         # AI workspace state
+│   ├── use-calendar-store.ts   # Calendar state
+│   ├── use-dashboard-store.ts  # Dashboard state
+│   ├── use-memory-store.ts     # Memory system state
+│   ├── use-settings-store.ts   # Persisted settings state
+│   └── use-theme-store.ts      # Theme state
+│
+├── types/                      # TypeScript type definitions
+│   ├── ai.ts
+│   ├── api.ts
+│   ├── calendar.ts
+│   ├── dashboard.ts
+│   ├── memory.ts
+│   ├── productivity.ts
+│   └── user.ts
+│
+├── prisma/
+│   ├── schema.prisma           # Database schema
+│   ├── seed.ts                 # Database seeder
+│   └── migrations/             # Database migrations
+│
+├── docs/                       # Project documentation
+│   ├── concept.md              # Concept & vision
+│   ├── design.md               # Design system specification
+│   ├── rules.md                # Development rules
+│   ├── stack.md                # Tech stack decisions
+│   └── AGENTS.md               # AI agent specifications
+│
+├── tests/                      # Test files
+└── public/                     # Static assets
+```
+
+---
+
+## Database Schema
+
+SOPHIA menggunakan PostgreSQL dengan Prisma ORM. Model utama:
+
+| Model | Deskripsi |
+|---|---|
+| `User` | Profil pengguna dengan relasi ke semua data |
+| `Account` | OAuth account (Google) |
+| `Session` | Session management |
+| `MemoryNode` | Node pikiran/pengetahuan personal |
+| `Task` | Tugas dengan status dan deadline |
+| `Event` | Kalender events (sync dari Google Calendar) |
+
+---
+
+## Memulai
+
+### Prerequisites
+
+- **Node.js** 20+
+- **PostgreSQL** database
+- **Google Cloud Console** project dengan:
+  - OAuth 2.0 credentials
+  - Google Calendar API enabled
+  - Generative AI API key (Gemini)
+
+### 1. Clone & Install
+
+```bash
+git clone <repository-url>
+cd sophia
+npm install
+```
+
+### 2. Environment Variables
+
+Buat file `.env.local` di root project:
+
+```env
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/sophia"
+
+# NextAuth
+AUTH_SECRET="your-auth-secret"
+
+# Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+
+# Gemini AI
+GEMINI_API_KEY="your-gemini-api-key"
+```
+
+### 3. Database Setup
+
+```bash
+# Generate Prisma client
+npx prisma generate
+
+# Run migrations
+npx prisma migrate dev
+
+# (Optional) Seed database
+npx prisma db seed
+```
+
+### 4. Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka [http://localhost:3000](http://localhost:3000) di browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 5. Build for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## State Management
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+SOPHIA menggunakan **Zustand** dengan persistence layer untuk menyimpan preferensi pengguna di Local Storage:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Store | Key | Deskripsi |
+|---|---|---|
+| `use-settings-store` | `sophia-settings-v1` | Konfigurasi AI, threshold, tema |
+| `use-dashboard-store` | — | State dashboard (server-driven) |
+| `use-calendar-store` | — | State kalender dan events |
+| `use-ai-store` | — | State AI workspace |
+| `use-memory-store` | — | State memory system |
+| `use-theme-store` | — | State tema dan aksen warna |
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Design Tokens
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+SOPHIA menggunakan sistem desain konsisten dengan token berikut:
+
+- **Border Radius**: `rounded-2xl` untuk cards utama
+- **Glassmorphism**: `bg-white/5 backdrop-blur-xl border border-white/10`
+- **Color Palette**: Muted, low-saturation colors pada dark background
+- **Spacing**: Premium breathable spacing (`gap-6`, `p-6`)
+- **Typography**: Inter font family
+- **Accent Colors**: Sophia Lavender (`#c0c1ff`), Cyber Mint (`#4edea3`), Steel Blue (`#adc6ff`)
+
+---
+
+## Scripts
+
+| Command | Deskripsi |
+|---|---|
+| `npm run dev` | Menjalankan development server (Turbopack) |
+| `npm run build` | Build production bundle |
+| `npm start` | Menjalankan production server |
+| `npm run lint` | Menjalankan ESLint |
+
+---
+
+## Lisensi
+
+Private project. All rights reserved.

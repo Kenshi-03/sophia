@@ -1,26 +1,195 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
-@theme inline {
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* SOPHIA Custom Colors */
+  --color-surface: var(--surface);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary: var(--on-primary);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-container: var(--secondary-container);
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Default to SOPHIA Dark theme to ensure dark mode first */
+  --background: #111316;
+  --foreground: #e2e2e6;
+  --card: #111316;
+  --card-foreground: #e2e2e6;
+  --popover: #111316;
+  --popover-foreground: #e2e2e6;
+  --primary: #c0c1ff;
+  --primary-foreground: #1000a9;
+  --secondary: #4edea3;
+  --secondary-foreground: #111316;
+  --muted: #1e2023;
+  --muted-foreground: #c7c4d7;
+  --accent: #1e2023;
+  --accent-foreground: #c0c1ff;
+  --destructive: #ffb4ab;
+  --destructive-foreground: #93000a;
+  
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #c0c1ff;
+  --radius: 1rem;
+
+  /* Custom SOPHIA Tokens */
+  --surface: #111316;
+  --surface-dim: #111316;
+  --surface-container: #1e2023;
+  --surface-container-low: #1a1c1f;
+  --surface-container-high: #282a2d;
+  --surface-container-highest: #333538;
+  --primary-container: #8083ff;
+  --on-primary: #1000a9;
+  --on-primary-container: #0d0096;
+  --secondary-container: #00a572;
+  --tertiary: #adc6ff;
+  --tertiary-container: #4d8eff;
+  --error: #ffb4ab;
+  --error-container: #93000a;
+  --on-surface: #e2e2e6;
+  --on-surface-variant: #c7c4d7;
+  --outline: #908fa0;
+  --outline-variant: #464554;
+}
+
+.dark {
+  /* Keep standard dark values consistent for next-themes compatibility */
+  --background: #111316;
+  --foreground: #e2e2e6;
+  --card: #111316;
+  --card-foreground: #e2e2e6;
+  --popover: #111316;
+  --popover-foreground: #e2e2e6;
+  --primary: #c0c1ff;
+  --primary-foreground: #1000a9;
+  --secondary: #4edea3;
+  --secondary-foreground: #111316;
+  --muted: #1e2023;
+  --muted-foreground: #c7c4d7;
+  --accent: #1e2023;
+  --accent-foreground: #c0c1ff;
+  --destructive: #ffb4ab;
+  --destructive-foreground: #93000a;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #c0c1ff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-color: #111316;
+    color: #e2e2e6;
+  }
+  html {
+    @apply font-sans;
+    background-color: #111316;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Glassmorphism Panel & Card styles */
+.glass-panel, .glass-card {
+  background: rgba(30, 32, 36, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -10px rgba(192, 193, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* AI Glow Effect */
+.ai-glow {
+  box-shadow: 0 0 40px -10px rgba(192, 193, 255, 0.15);
+}
+
+.ai-glow:hover {
+  box-shadow: 0 0 50px -5px rgba(192, 193, 255, 0.25);
+}
+
+/* AI Pulse Indicator */
+.ai-pulse-ring {
+  position: relative;
+}
+
+.ai-pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: #c0c1ff;
+  opacity: 0.3;
+  animation: pulse-ring 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  pointer-events: none;
+  transition: animation-duration 0.2s ease;
+}
+
+.ai-pulse-ring:hover::after {
+  animation-duration: 0.5s;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.15;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.3;
+  }
 }
