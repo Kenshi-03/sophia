@@ -61,7 +61,7 @@ export default async function DashboardPage() {
     }
 
     if (dbUser) {
-      tasks = dbUser.tasks.map((t) => ({
+      tasks = dbUser.tasks.map((t:any) => ({
         ...t,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
