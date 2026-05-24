@@ -1,9 +1,28 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth/auth';
+import { getUserSchedule } from '@/lib/db/queries/schedule';
+import { prisma } from '@/lib/db/prisma';
 
 export async function GET() {
-  // Returns mock events list for today
-  return NextResponse.json([
-    { id: '1', title: 'Morning Lecture Prep', startTime: '09:00 AM', endTime: '10:30 AM' },
-    { id: '2', title: 'SOPHIA Dev Sprint', startTime: '02:00 PM', endTime: '04:00 PM' },
-  ]);
+  try {
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const email = session.user.email;
+    const dbUser = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json([]);
+    }
+
+    const events = await getUserSchedule(dbUser.id);
+    return NextResponse.json(events);
+  } catch (error) {
+    console.error('Failed to get today schedule:', error);
+    return NextResponse.json({ error: 'Database error' }, { status: 500 });
+  }
 }

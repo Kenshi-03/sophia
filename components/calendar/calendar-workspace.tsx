@@ -1,12 +1,13 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Sparkles, Plus, RefreshCw } from "lucide-react"
 import PageHeader from "@/components/shared/page-header"
 import CalendarTimeline from "./calendar-timeline"
 import SyncStatusPanel from "./sync-status-panel"
 import EventDetailsModal from "./event-details-modal"
 import { CalendarEvent } from "@/types/calendar"
+import { saveFocusBlockAction } from "@/app/actions/schedule"
 
 interface CalendarWorkspaceProps {
   initialEvents: CalendarEvent[]
@@ -17,6 +18,9 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [aiAnalysis, setAiAnalysis] = useState<string>("Menganalisis jadwal Anda...")
+  const [recommendedFocus, setRecommendedFocus] = useState<CalendarEvent | null>(null)
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false)
 
   const handleSelectEvent = (event: CalendarEvent) => {
     setSelectedEvent(event)
@@ -28,6 +32,68 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
     setSelectedEvent(null)
   }
 
+  const fetchInsights = async (currentEvents: CalendarEvent[]) => {
+    setIsLoadingInsights(true)
+    try {
+      const res = await fetch("/api/ai/planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: currentEvents }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiAnalysis(data.analysis || "Jadwal Anda optimal.")
+        if (data.recommendation) {
+          setRecommendedFocus({
+            id: "recommended-focus-block",
+            title: data.recommendation.title || "Deep Work Focus Session",
+            description: data.recommendation.description || "Sesi alokasi kognitif terfokus.",
+            startTime: data.recommendation.startTime,
+            endTime: data.recommendation.endTime,
+            location: data.recommendation.location || "Localhost",
+            isFocusMode: true,
+            cognitiveLoad: 75,
+            tags: ["focus", "ai-recommended"]
+          })
+        } else {
+          setRecommendedFocus(null)
+        }
+      } else {
+        setAiAnalysis("Gagal memuat rekomendasi kognitif AI.")
+        setRecommendedFocus(null)
+      }
+    } catch (error) {
+      console.error("Failed to fetch planner insights:", error)
+      setAiAnalysis("Gagal memuat rekomendasi kognitif AI.")
+      setRecommendedFocus(null)
+    } finally {
+      setIsLoadingInsights(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchInsights(events)
+  }, [events])
+
+  const handleApplyRecommendation = async () => {
+    if (!recommendedFocus) return
+
+    try {
+      const result = await saveFocusBlockAction(recommendedFocus)
+      if (result.success) {
+        const res = await fetch("/api/calendar/today")
+        if (res.ok) {
+          const updatedEvents = await res.json()
+          setEvents(updatedEvents)
+        }
+      } else {
+        console.error("Failed to save focus block:", result.error)
+      }
+    } catch (error) {
+      console.error("Error applying focus block recommendation:", error)
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* Page Header */}
@@ -37,7 +103,6 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
       >
         <button
           onClick={() => {
-            // Trigger simulation
             const btn = document.querySelector('button[onClick*="Sync Now"]') as HTMLButtonElement | null
             if (btn) btn.click()
           }}
@@ -75,39 +140,24 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
               </div>
               
               <p className="text-xs text-[#c7c4d7]/90 leading-relaxed">
-                Analisis agenda SOPHIA mengidentifikasi adanya kepadatan aktivitas (Beban Kognitif Tinggi) besok antara pukul <strong>14:00 - 16:00</strong>. Kami menyarankan untuk menjadwalkan <strong>Focus Block</strong> di pagi hari untuk pengerjaan mendalam.
+                {aiAnalysis}
               </p>
               
-              <div className="pt-2">
-                <button
-                  onClick={() => {
-                    // Inject a focus mode event as recommendation action simulation
-                    const alreadyExists = events.some(e => e.id === "mock-focus-recommendation")
-                    if (alreadyExists) return
-                    
-                    const newFocusBlock: CalendarEvent = {
-                      id: "mock-focus-recommendation",
-                      title: "Deep Work: Core System Integration",
-                      description: "Sesi alokasi kognitif terfokus untuk integrasi sub-sistem SOPHIA.",
-                      startTime: new Date(new Date().setHours(8, 0, 0, 0)),
-                      endTime: new Date(new Date().setHours(9, 30, 0, 0)),
-                      location: "Localhost",
-                      isFocusMode: true,
-                      cognitiveLoad: 50,
-                      tags: ["focus", "core-integration"]
-                    }
-                    setEvents((prev) => [...prev, newFocusBlock])
-                  }}
-                  className="w-full py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 transition-all duration-200 active:scale-95"
-                >
-                  Terapkan Rekomendasi Fokus
-                </button>
-              </div>
+              {recommendedFocus && (
+                <div className="pt-2">
+                  <button
+                    onClick={handleApplyRecommendation}
+                    className="w-full py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 transition-all duration-200 active:scale-95"
+                  >
+                    Terapkan Rekomendasi Fokus
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Google Sync Control Status Panel */}
-          <SyncStatusPanel hasCredentials={hasCredentials} />
+          <SyncStatusPanel hasCredentials={hasCredentials} onSyncComplete={setEvents} />
 
         </div>
 

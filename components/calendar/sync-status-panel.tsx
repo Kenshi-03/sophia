@@ -1,13 +1,15 @@
 "use client"
 
 import React, { useState } from "react"
-import { RefreshCw, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Key, Check } from "lucide-react"
+import { RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Key, Check } from "lucide-react"
+import { CalendarEvent } from "@/types/calendar"
 
 interface SyncStatusPanelProps {
   hasCredentials: boolean
+  onSyncComplete?: (events: CalendarEvent[]) => void
 }
 
-export default function SyncStatusPanel({ hasCredentials }: SyncStatusPanelProps) {
+export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: SyncStatusPanelProps) {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncLogs, setSyncLogs] = useState<string[]>([
     "Sistem inisialisasi: Mode lokal aktif.",
@@ -27,27 +29,55 @@ export default function SyncStatusPanel({ hasCredentials }: SyncStatusPanelProps
       ...prev,
     ])
 
-    // Wait 2 seconds for sync simulation
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    try {
+      const res = await fetch("/api/calendar/sync", {
+        method: "POST",
+      })
 
-    setIsSyncing(false)
-    setSyncSuccess(true)
-    
-    const nowStr = new Date().toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
+      if (!res.ok) {
+        throw new Error(`Sync returned status ${res.status}`)
+      }
 
-    setLastSync(nowStr)
+      const syncResult = await res.json()
+      const isLocal = syncResult.mode === 'local'
 
-    setSyncLogs((prev) => [
-      `[${nowStr}] Sukses: Sinkronisasi selesai. Berhasil memperbarui agenda.`,
-      `[${nowStr}] Info: Mengindeks 4 focus blocks berdasarkan rekomendasi produktivitas.`,
-      ...prev,
-    ])
+      // Fetch newly updated events list
+      const todayRes = await fetch("/api/calendar/today")
+      if (!todayRes.ok) {
+        throw new Error("Failed to fetch updated events list")
+      }
+      const updatedEvents = await todayRes.json()
 
-    // Hide success checkmark after 3 seconds
+      setIsSyncing(false)
+      setSyncSuccess(true)
+      
+      const nowStr = new Date().toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+
+      setLastSync(nowStr)
+
+      setSyncLogs((prev) => [
+        `[${nowStr}] Sukses: Sinkronisasi selesai. Berhasil memperbarui agenda (${isLocal ? 'Database Lokal' : 'Google Cloud'}).`,
+        `[${nowStr}] Info: Mengindeks ${updatedEvents.length} agenda berdasarkan rekomendasi produktivitas.`,
+        ...prev,
+      ])
+
+      if (onSyncComplete) {
+        onSyncComplete(updatedEvents)
+      }
+    } catch (error: any) {
+      console.error(error)
+      setIsSyncing(false)
+      setSyncLogs((prev) => [
+        `[${new Date().toLocaleTimeString()}] Error: Sinkronisasi gagal. ${error?.message || ''}`,
+        ...prev,
+      ])
+    }
+
+    // Hide success checkmark after 300ms
     setTimeout(() => {
       setSyncSuccess(false)
     }, 300)
