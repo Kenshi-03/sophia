@@ -1,4 +1,4 @@
-export type AIProvider = "gemini" | "groq" | "maia" | "ollama"
+export type AIProvider = "gemini" | "groq" | "ollama"
 
 export interface CompletionOptions {
   systemInstruction?: string

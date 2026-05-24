@@ -1,13 +1,10 @@
-import { generateRouterResponse } from "@/lib/ai/providers/router"
+import { generateGatewayResponse } from "@/lib/ai/gateway/maia"
 
 export async function POST(req: Request) {
   try {
     const { query } = await req.json()
 
-    const responseText = await generateRouterResponse(query, {
-      provider: "gemini",
-      model: "gemini-2.5-flash",
-    })
+    const responseText = await generateGatewayResponse(query)
 
     return Response.json({
       response: responseText,
