@@ -1,9 +1,11 @@
 import { buildMemoryContext } from '../memory/context-builder';
+import { MemoryNode } from '@/types/memory';
+import { CalendarEvent } from '@/types/calendar';
 
 export function assembleAgentContext(
   userQuery: string,
-  memories: any[],
-  calendarEvents: any[]
+  memories: MemoryNode[],
+  calendarEvents: CalendarEvent[]
 ): string {
   const memoryCtx = buildMemoryContext(memories);
   const calendarCtx = calendarEvents

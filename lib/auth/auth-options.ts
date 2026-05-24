@@ -1,5 +1,6 @@
-import { NextAuthConfig } from 'next-auth';
+import { NextAuthConfig, Session } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import { JWT } from 'next-auth/jwt';
 
 export const authOptions: NextAuthConfig = {
   providers: [
@@ -22,7 +23,7 @@ export const authOptions: NextAuthConfig = {
       }
       return token;
     },
-    async session({ session, token }: any) {
+    async session({ session, token }: { session: Session & { accessToken?: string }; token: JWT & { accessToken?: string } }) {
       session.accessToken = token.accessToken;
       return session;
     },

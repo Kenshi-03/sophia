@@ -1,4 +1,6 @@
-export async function generateDailyPlan(userId: string, calendarEvents: any[]) {
+import { CalendarEvent } from '@/types/calendar';
+
+export async function generateDailyPlan(userId: string, calendarEvents: CalendarEvent[]) {
   // Recommend focus blocks and daily schedules
   return {
     userId,

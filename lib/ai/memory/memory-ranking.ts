@@ -1,9 +1,11 @@
+import { MemoryNode } from '@/types/memory';
+
 interface ScoredMemory {
-  node: any;
+  node: MemoryNode;
   score: number;
 }
 
-export function rankMemories(memories: any[], query: string): any[] {
+export function rankMemories(memories: MemoryNode[], query: string): MemoryNode[] {
   const scored: ScoredMemory[] = memories.map(node => {
     let score = 0;
     // Word overlap count

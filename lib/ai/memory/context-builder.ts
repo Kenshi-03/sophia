@@ -1,4 +1,6 @@
-export function buildMemoryContext(memories: any[]): string {
+import { MemoryNode } from '@/types/memory';
+
+export function buildMemoryContext(memories: MemoryNode[]): string {
   if (memories.length === 0) return 'No relevant memories retrieved.';
   
   return memories

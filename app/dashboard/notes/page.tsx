@@ -413,7 +413,7 @@ export default function NotesPage() {
                       <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Category</label>
                       <select
                         value={editCategory}
-                        onChange={(e) => setEditCategory(e.target.value as any)}
+                        onChange={(e) => setEditCategory(e.target.value as "Ideas" | "References" | "Reminders")}
                         className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
                       >
                         <option value="Ideas">Ideas</option>
@@ -426,7 +426,7 @@ export default function NotesPage() {
                       <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Notebook</label>
                       <select
                         value={editNotebook}
-                        onChange={(e) => setEditNotebook(e.target.value as any)}
+                        onChange={(e) => setEditNotebook(e.target.value as "Personal" | "Research" | "Academics")}
                         className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
                       >
                         <option value="Personal">Personal</option>
