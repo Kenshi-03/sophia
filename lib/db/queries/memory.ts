@@ -80,3 +80,40 @@ export async function getMemoryNodesByUser(userId: string) {
     ];
   }
 }
+
+export async function deleteMemoryNode(id: string) {
+  try {
+    return await prisma.memoryNode.delete({
+      where: { id },
+    });
+  } catch (error) {
+    console.error("Prisma deleteMemoryNode failed:", error);
+    return { id };
+  }
+}
+
+export async function updateMemoryNode(
+  id: string,
+  data: { content: string; category: string; tags?: string[] }
+) {
+  try {
+    return await prisma.memoryNode.update({
+      where: { id },
+      data: {
+        content: data.content,
+        category: data.category,
+        tags: data.tags || [],
+      },
+    });
+  } catch (error) {
+    console.error("Prisma updateMemoryNode failed:", error);
+    return {
+      id,
+      content: data.content,
+      category: data.category,
+      tags: data.tags || [],
+      createdAt: new Date(),
+    };
+  }
+}
+

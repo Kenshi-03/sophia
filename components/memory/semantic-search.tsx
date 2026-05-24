@@ -1,32 +1,36 @@
-'use client'
+"use client"
 
-import React, { useState } from 'react'
-import { Search } from 'lucide-react'
+import React from "react"
+import { Search, X } from "lucide-react"
 
 interface SemanticSearchProps {
-  onSearch?: (value: string) => void
+  value: string
+  onChange: (value: string) => void
+  onClear?: () => void
 }
 
-export default function SemanticSearch({ onSearch }: SemanticSearchProps) {
-  const [value, setValue] = useState('')
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSearch?.(value)
-  }
-
+export default function SemanticSearch({ value, onChange, onClear }: SemanticSearchProps) {
   return (
-    <form onSubmit={handleSearch} className="relative bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800/80 shadow-sm">
-      <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none text-zinc-400">
-        <Search size={18} />
+    <div className="relative glass-panel rounded-2xl p-2 ai-glow transition-all duration-300">
+      <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-[#c7c4d7]/50">
+        <Search size={16} />
       </div>
       <input
         type="text"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Search memories semantically... (e.g., 'What did I learn about NextJS layout last week?')"
-        className="w-full pl-12 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 text-zinc-900 dark:text-zinc-50"
+        onChange={(e) => onChange(e.target.value)}
+        placeholder='Search memories semantically... (e.g., "What did I learn about NextJS?")'
+        className="w-full pl-11 pr-10 py-3 bg-[#111316]/50 border border-white/[0.03] focus:border-[#c0c1ff]/30 rounded-xl text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/15 transition-all placeholder-[#c7c4d7]/30"
       />
-    </form>
+      {value && (
+        <button
+          onClick={onClear}
+          type="button"
+          className="absolute inset-y-0 right-5 flex items-center text-[#c7c4d7]/50 hover:text-white transition-colors"
+        >
+          <X size={14} />
+        </button>
+      )}
+    </div>
   )
 }

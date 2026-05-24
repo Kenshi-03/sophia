@@ -4,6 +4,7 @@ export interface MemoryNode {
   category: string;
   tags: string[];
   createdAt: Date | string;
+  relevanceScore?: number;
 }
 
 export interface MemorySearchResult {

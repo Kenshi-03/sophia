@@ -1,18 +1,15 @@
 import { create } from 'zustand';
+import { MemoryNode as TypeMemoryNode } from '@/types/memory';
 
-export interface MemoryNode {
-  id: string;
-  content: string;
-  category: string;
-  tags: string[];
-  createdAt: string;
-}
+export type MemoryNode = TypeMemoryNode;
 
 interface MemoryState {
   memories: MemoryNode[];
   searchQuery: string;
   setMemories: (memories: MemoryNode[]) => void;
   addMemory: (memory: MemoryNode) => void;
+  deleteMemory: (id: string) => void;
+  updateMemory: (memory: MemoryNode) => void;
   setSearchQuery: (query: string) => void;
 }
 
@@ -36,6 +33,8 @@ export const useMemoryStore = create<MemoryState>((set) => ({
   searchQuery: '',
   setMemories: (memories) => set({ memories }),
   addMemory: (memory) => set((state) => ({ memories: [memory, ...state.memories] })),
+  deleteMemory: (id) => set((state) => ({ memories: state.memories.filter((m) => m.id !== id) })),
+  updateMemory: (memory) => set((state) => ({ memories: state.memories.map((m) => (m.id === memory.id ? memory : m)) })),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 }));
 export default useMemoryStore;
