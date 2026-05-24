@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { mockEvents } from "@/lib/db/mocks"
 import CalendarWorkspace from "@/components/calendar/calendar-workspace"
 import { CalendarEvent } from "@/types/calendar"
+import type { Event as PrismaEvent } from "@prisma/client"
 
 export default async function CalendarPage() {
   const session = await auth()
@@ -40,7 +41,7 @@ export default async function CalendarPage() {
     }
 
     if (dbUser) {
-      events = dbUser.events.map((event) => ({
+      events = dbUser.events.map((event: PrismaEvent) => ({
         id: event.id,
         title: event.title,
         description: event.description,
