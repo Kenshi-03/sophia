@@ -61,18 +61,18 @@ export default async function DashboardPage() {
     }
 
     if (dbUser) {
-      tasks = dbUser.tasks.map((t:any) => ({
+      tasks = dbUser.tasks.map((t: { id: string; title: string; content: string | null; completed: boolean; dueDate: Date | null; userId: string; createdAt: Date; updatedAt: Date }) => ({
         ...t,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
         dueDate: t.dueDate ? t.dueDate.toISOString() : null,
       }))
-      events = dbUser.events.map((e) => ({
+      events = dbUser.events.map((e: { id: string; title: string; description: string | null; startTime: Date; endTime: Date; location: string | null; userId: string; createdAt: Date; updatedAt: Date }) => ({
         ...e,
         startTime: e.startTime.toISOString(),
         endTime: e.endTime.toISOString(),
       }))
-      memories = dbUser.memories.map((m) => ({
+      memories = dbUser.memories.map((m: { id: string; content: string; category: string; tags: string[]; userId: string; createdAt: Date }) => ({
         ...m,
         createdAt: m.createdAt.toISOString(),
       }))
