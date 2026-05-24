@@ -1,9 +1,9 @@
-import { CompletionOptions } from "./types"
+import { CompletionOptions, ProviderResponse } from "./types"
 
 export async function generateGroqResponse(
   prompt: string,
   options?: CompletionOptions
-): Promise<string> {
+): Promise<ProviderResponse> {
   const apiKey = process.env.GROQ_API_KEY || ""
   if (!apiKey) {
     throw new Error("GROQ_API_KEY is not defined")
@@ -11,6 +11,7 @@ export async function generateGroqResponse(
 
   const modelName = options?.model || "llama-3.3-70b-versatile"
   const systemPrompt = options?.systemInstruction
+  const startTime = Date.now()
 
   try {
     const messages = []
@@ -39,7 +40,15 @@ export async function generateGroqResponse(
     }
 
     const data = await response.json()
-    return data.choices?.[0]?.message?.content || ""
+    const text = data.choices?.[0]?.message?.content || ""
+    const latency = Date.now() - startTime
+
+    return {
+      text,
+      provider: "groq",
+      model: modelName,
+      latency,
+    }
   } catch (error) {
     console.error("Groq Provider Error:", error)
     throw error

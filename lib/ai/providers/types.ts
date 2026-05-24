@@ -7,11 +7,14 @@ export interface CompletionOptions {
   model?: string
 }
 
-export interface CompletionResponse {
+export interface ProviderResponse {
   text: string
+  provider: AIProvider
+  model: string
+  latency?: number
   usage?: {
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
+    promptTokens?: number
+    completionTokens?: number
+    totalTokens?: number
   }
 }

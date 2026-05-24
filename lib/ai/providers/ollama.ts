@@ -1,11 +1,12 @@
-import { CompletionOptions } from "./types"
+import { CompletionOptions, ProviderResponse } from "./types"
 
 export async function generateOllamaResponse(
   prompt: string,
   options?: CompletionOptions
-): Promise<string> {
+): Promise<ProviderResponse> {
   const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
   const modelName = options?.model || "maia-local"
+  const startTime = Date.now()
 
   try {
     const messages = []
@@ -32,7 +33,15 @@ export async function generateOllamaResponse(
     }
 
     const data = await response.json()
-    return data.choices?.[0]?.message?.content || ""
+    const text = data.choices?.[0]?.message?.content || ""
+    const latency = Date.now() - startTime
+
+    return {
+      text,
+      provider: "ollama",
+      model: modelName,
+      latency,
+    }
   } catch (error) {
     console.error("Ollama Provider Error:", error)
     throw error
