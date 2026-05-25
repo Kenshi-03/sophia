@@ -39,11 +39,11 @@ export async function GET() {
       
       // Calculate cognitive load weights based on categories
       let cognitiveLoad = 35; // Default moderate load
-      if (catType === "exam-evaluation") cognitiveLoad = 80;
+      if (catType === "exam") cognitiveLoad = 80;
       else if (catType === "deep-work") cognitiveLoad = 75;
-      else if (catType === "workout-health") cognitiveLoad = -15; // Recovery
-      else if (catType === "rest") cognitiveLoad = -30; // High recovery
-      else if (catType === "leisure-social") cognitiveLoad = -10;
+      else if (catType === "health") cognitiveLoad = -15; // Recovery
+      else if (catType === "recovery") cognitiveLoad = -30; // High recovery
+      else if (catType === "social") cognitiveLoad = -10;
 
       const isFocusMode = catType === "deep-work" || event.title.toLowerCase().includes("focus");
 

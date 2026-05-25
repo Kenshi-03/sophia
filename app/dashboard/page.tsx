@@ -73,11 +73,11 @@ export default async function DashboardPage() {
       events = dbUser.events.map((e: any) => {
         const catType = e.calendar?.categoryType || ""
         let cognitiveLoad = 35
-        if (catType === "exam-evaluation") cognitiveLoad = 80
+        if (catType === "exam") cognitiveLoad = 80
         else if (catType === "deep-work") cognitiveLoad = 75
-        else if (catType === "workout-health") cognitiveLoad = -15
-        else if (catType === "rest") cognitiveLoad = -30
-        else if (catType === "leisure-social") cognitiveLoad = -10
+        else if (catType === "health") cognitiveLoad = -15
+        else if (catType === "recovery") cognitiveLoad = -30
+        else if (catType === "social") cognitiveLoad = -10
 
         const isFocusMode = catType === "deep-work" || e.title.toLowerCase().includes("focus")
 
@@ -123,12 +123,12 @@ export default async function DashboardPage() {
         startTime: new Date(event.startTime).toISOString(),
         endTime: new Date(event.endTime).toISOString(),
         calendarId: isFocus ? "mock-cat-1" : "mock-cat-2",
-        color: isFocus ? "#8083ff" : "#c0c1ff",
+        color: isFocus ? "#2563EB" : "#3B82F6",
         categoryName: isFocus ? "Deep Work" : "Jadwal Kelas",
-        categoryType: isFocus ? "deep-work" : "class-schedule",
+        categoryType: isFocus ? "deep-work" : "academic",
         isFocusMode: isFocus,
         cognitiveLoad: isFocus ? 75 : 35,
-        tags: isFocus ? ["deep-work"] : ["class-schedule"],
+        tags: isFocus ? ["deep-work"] : ["academic"],
       }
     })
   }
@@ -171,11 +171,11 @@ export default async function DashboardPage() {
   let calendarLoadSum = 0
   todayEvents.forEach((e) => {
     const catType = e.categoryType || ""
-    if (catType === "exam-evaluation") calendarLoadSum += 40      // High stress exam adds load
+    if (catType === "exam") calendarLoadSum += 40      // High stress exam adds load
     else if (catType === "deep-work") calendarLoadSum += 25        // Intellect intensive adds load
-    else if (catType === "workout-health") calendarLoadSum -= 10   // Workout aids recovery
-    else if (catType === "rest") calendarLoadSum -= 20             // Rest aids recovery
-    else if (catType === "leisure-social") calendarLoadSum -= 5    // Leisure aids recovery
+    else if (catType === "health") calendarLoadSum -= 10   // Workout aids recovery
+    else if (catType === "recovery") calendarLoadSum -= 20             // Rest aids recovery
+    else if (catType === "social") calendarLoadSum -= 5    // Leisure aids recovery
     else calendarLoadSum += 10                                     // Default schedule impact
   })
 

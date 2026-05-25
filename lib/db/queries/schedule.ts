@@ -17,11 +17,11 @@ export async function getUserSchedule(userId: string): Promise<CalendarEvent[]> 
     
     // Cognitive load calculations
     let cognitiveLoad = 35;
-    if (catType === "exam-evaluation") cognitiveLoad = 80;
+    if (catType === "exam") cognitiveLoad = 80;
     else if (catType === "deep-work") cognitiveLoad = 75;
-    else if (catType === "workout-health") cognitiveLoad = -15;
-    else if (catType === "rest") cognitiveLoad = -30;
-    else if (catType === "leisure-social") cognitiveLoad = -10;
+    else if (catType === "health") cognitiveLoad = -15;
+    else if (catType === "recovery") cognitiveLoad = -30;
+    else if (catType === "social") cognitiveLoad = -10;
 
     const isFocusMode = catType === "deep-work" || event.title.toLowerCase().includes("focus");
 

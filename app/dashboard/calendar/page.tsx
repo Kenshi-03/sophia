@@ -50,11 +50,11 @@ export default async function CalendarPage() {
       initialEvents = dbEvents.map((event) => {
         const catType = event.calendar?.categoryType || ""
         let cognitiveLoad = 35
-        if (catType === "exam-evaluation") cognitiveLoad = 80
+        if (catType === "exam") cognitiveLoad = 80
         else if (catType === "deep-work") cognitiveLoad = 75
-        else if (catType === "workout-health") cognitiveLoad = -15
-        else if (catType === "rest") cognitiveLoad = -30
-        else if (catType === "leisure-social") cognitiveLoad = -10
+        else if (catType === "health") cognitiveLoad = -15
+        else if (catType === "recovery") cognitiveLoad = -30
+        else if (catType === "social") cognitiveLoad = -10
 
         const isFocusMode = catType === "deep-work" || event.title.toLowerCase().includes("focus")
 
@@ -82,12 +82,11 @@ export default async function CalendarPage() {
 
   // Fallback to rich mock data if empty
   if (initialEvents.length === 0) {
-    // Seed dummy categories for mock data rendering
     initialCategories = [
-      { id: "mock-cat-1", name: "Deep Work", color: "#8083ff", categoryType: "deep-work" },
-      { id: "mock-cat-2", name: "Jadwal Kelas", color: "#c0c1ff", categoryType: "class-schedule" },
-      { id: "mock-cat-3", name: "Workout & Kesehatan", color: "#4edea3", categoryType: "workout-health" },
-      { id: "mock-cat-4", name: "Istirahat", color: "#282a2d", categoryType: "rest" },
+      { id: "mock-cat-1", name: "Deep Work", color: "#2563EB", categoryType: "deep-work" },
+      { id: "mock-cat-2", name: "Jadwal Kelas", color: "#3B82F6", categoryType: "academic" },
+      { id: "mock-cat-3", name: "Workout & Kesehatan", color: "#10B981", categoryType: "health" },
+      { id: "mock-cat-4", name: "Istirahat", color: "#64748B", categoryType: "recovery" },
     ]
 
     initialEvents = mockEvents.map((event) => {
@@ -97,12 +96,12 @@ export default async function CalendarPage() {
         startTime: new Date(event.startTime).toISOString(),
         endTime: new Date(event.endTime).toISOString(),
         calendarId: isFocus ? "mock-cat-1" : "mock-cat-2",
-        color: isFocus ? "#8083ff" : "#c0c1ff",
+        color: isFocus ? "#2563EB" : "#3B82F6",
         categoryName: isFocus ? "Deep Work" : "Jadwal Kelas",
-        categoryType: isFocus ? "deep-work" : "class-schedule",
+        categoryType: isFocus ? "deep-work" : "academic",
         isFocusMode: isFocus,
         cognitiveLoad: isFocus ? 75 : 35,
-        tags: isFocus ? ["deep-work"] : ["class-schedule"],
+        tags: isFocus ? ["deep-work"] : ["academic"],
       }
     })
   }
