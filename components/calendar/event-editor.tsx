@@ -1,8 +1,15 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { X, Calendar, Clock, MapPin, AlignLeft, Tag, Loader2, Trash2 } from "lucide-react"
+import { Calendar, Clock, MapPin, AlignLeft, Tag, Loader2, Trash2 } from "lucide-react"
 import { CalendarEvent } from "@/types/calendar"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
 
 interface CalendarCategory {
   id: string;
@@ -38,6 +45,18 @@ export default function EventEditor({
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Track responsive screen viewport width for side vs bottom sheet mapping
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640)
+    }
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   // Initialize form values when opening or switching events
   useEffect(() => {
@@ -80,20 +99,6 @@ export default function EventEditor({
     const minutes = String(d.getMinutes()).padStart(2, "0")
     return `${year}-${month}-${day}T${hours}:${minutes}`
   }
-
-  // Prevent background scrolling when open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden"
-    } else {
-      document.body.style.overflow = "unset"
-    }
-    return () => {
-      document.body.style.overflow = "unset"
-    }
-  }, [isOpen])
-
-  if (!isOpen) return null
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -186,44 +191,38 @@ export default function EventEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      {/* Backdrop tap to close (only on desktop modal) */}
-      <div className="absolute inset-0 max-sm:hidden" onClick={onClose} />
-
-      {/* Editor Sheet Wrapper */}
-      {/* Mobile: slides from bottom. Desktop: standard centered modal */}
-      <div className="w-full max-sm:fixed max-sm:bottom-0 max-sm:rounded-t-[2.5rem] max-sm:max-h-[90vh] sm:max-w-lg glass-panel bg-[#1e2023]/98 border-t border-x sm:border border-white/10 shadow-2xl p-6 md:p-8 space-y-6 max-h-[95vh] overflow-y-auto scrollbar-thin animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 flex flex-col">
-        
+    <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent
+        side={isMobile ? "bottom" : "right"}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        showCloseButton={true}
+        className="glass-panel border-white/10 text-white bg-[#1e2023]/98 backdrop-blur-2xl p-6 md:p-8 flex flex-col focus:outline-none z-50 max-sm:h-[85vh] max-sm:rounded-t-[2.5rem] max-sm:border-t max-sm:border-x-0 max-sm:border-b-0 sm:max-w-lg"
+      >
         {/* Drag handle pill on mobile */}
-        <div className="sm:hidden h-1.5 w-12 bg-white/10 rounded-full mx-auto -mt-2 mb-4 shrink-0" />
+        {isMobile && (
+          <div className="h-1.5 w-12 bg-white/10 rounded-full mx-auto -mt-2 mb-4 shrink-0" />
+        )}
 
         {/* Header Title */}
-        <div className="flex justify-between items-center shrink-0">
-          <div className="space-y-0.5">
-            <h3 className="font-bold text-base text-white font-display">
-              {isEditMode ? "Ubah Rincian Agenda" : "Tambah Agenda Baru"}
-            </h3>
-            <p className="text-[10px] text-[#c7c4d7]/50 uppercase tracking-wider font-mono">
-              {isEditMode ? "Calendar Intelligence Update" : "Calendar Intelligence Insert"}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[#c7c4d7]/70 hover:text-white p-1.5 hover:bg-white/5 rounded-xl transition-all"
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <SheetHeader className="shrink-0 mb-4 text-left">
+          <SheetTitle className="font-bold text-base text-white font-display">
+            {isEditMode ? "Ubah Rincian Agenda" : "Tambah Agenda Baru"}
+          </SheetTitle>
+          <SheetDescription className="text-[10px] text-[#c7c4d7]/50 uppercase tracking-wider font-mono">
+            {isEditMode ? "Calendar Intelligence Update" : "Calendar Intelligence Insert"}
+          </SheetDescription>
+        </SheetHeader>
 
         {/* Error Alert Box */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-[#ffb4ab] text-xs p-3.5 rounded-2xl shrink-0 animate-fade-in">
+          <div className="bg-red-500/10 border border-red-500/20 text-[#ffb4ab] text-xs p-3.5 rounded-2xl shrink-0 animate-fade-in mb-4">
             {error}
           </div>
         )}
 
         {/* Input Form */}
-        <form onSubmit={handleSave} className="space-y-5 overflow-y-auto flex-1 pr-1">
+        <form onSubmit={handleSave} className="space-y-5 overflow-y-auto flex-1 pr-1 pb-4 scrollbar-thin">
           {/* Title Input */}
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/50 block">
@@ -340,7 +339,7 @@ export default function EventEditor({
                 type="button"
                 onClick={handleDelete}
                 disabled={isSaving || isDeleting}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-[#ffb4ab] rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-[#ffb4ab] rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -356,7 +355,7 @@ export default function EventEditor({
               type="button"
               onClick={onClose}
               disabled={isSaving || isDeleting}
-              className="w-full sm:flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold border border-white/5 transition-all active:scale-95 disabled:opacity-50"
+              className="w-full sm:flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold border border-white/5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               Batal
             </button>
@@ -365,14 +364,14 @@ export default function EventEditor({
             <button
               type="submit"
               disabled={isSaving || isDeleting}
-              className="w-full sm:flex-1 py-3 bg-[#8083ff] text-white rounded-xl text-xs font-bold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full sm:flex-1 py-3 bg-[#8083ff] text-white rounded-xl text-xs font-bold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               {isSaving && <Loader2 size={14} className="animate-spin" />}
               <span>{isEditMode ? "Simpan Perubahan" : "Tambah Agenda"}</span>
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   )
 }
