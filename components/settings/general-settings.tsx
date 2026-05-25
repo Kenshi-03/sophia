@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { useSettingsStore } from "@/stores/use-settings-store"
+import { AVAILABLE_MODELS } from "@/lib/ai/config/models"
 import { Sliders, CheckCircle, Loader2, Sparkles, RefreshCw, Cpu, Activity } from "lucide-react"
 
 export default function GeneralSettings() {
@@ -131,9 +132,11 @@ export default function GeneralSettings() {
               onChange={(e) => setModel(e.target.value)}
               className="w-full px-3 py-2 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20"
             >
-              <option value="maia/gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
-              <option value="maia/llama-3.1-8b">Llama 3.1 8B</option>
-              <option value="maia/groq-llama">Groq Llama</option>
+              {AVAILABLE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -212,7 +215,9 @@ export default function GeneralSettings() {
             )}
             
             <div className="text-[10px] font-mono text-[#c7c4d7]/60">
-              Active: <span className="text-[#c0c1ff] font-bold">{model}</span>
+              Active: <span className="text-[#c0c1ff] font-bold">
+                {AVAILABLE_MODELS.find(m => m.id === model)?.label || model}
+              </span>
             </div>
           </div>
         </div>

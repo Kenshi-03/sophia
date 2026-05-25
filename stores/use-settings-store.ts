@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import { AI_MODELS } from "@/lib/ai/config/models"
 
 interface SettingsState {
   userName: string
@@ -22,7 +23,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       userName: "Sophia Dev",
-      defaultAiModel: "maia/gemini-2.5-flash",
+      defaultAiModel: AI_MODELS.FAST,
       aiMode: "balanced",
       cognitiveThreshold: 75,
       themeAccent: "lavender",

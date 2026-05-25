@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { AIResponse, CompletionOptions } from "../types"
+import { AI_MODELS, AVAILABLE_MODELS } from "../config/models"
 
 // Initialize OpenAI client pointing to MAIA Router
 const getMaiaClient = () => {
@@ -21,12 +22,27 @@ export async function generateGatewayResponse(
   const startTime = Date.now()
   const apiKey = process.env.MAIA_API_KEY || ""
   
+  // 1. AI Health Validation: Validate API Key presence
   if (!apiKey) {
-    throw new Error("MAIA_API_KEY is not defined in the environment variables.")
+    throw new Error("Kredensial MAIA_API_KEY tidak dikonfigurasi di server.")
   }
 
-  // Determine model selection (default: maia/gemini-2.5-flash)
-  const selectedModel = options?.model || "maia/gemini-2.5-flash"
+  // 2. AI Health Validation: Validate request payload
+  if (!prompt || prompt.trim() === "") {
+    throw new Error("Payload permintaan tidak valid: Prompt tidak boleh kosong.")
+  }
+
+  // 3. Model Validation & Safe Fallback System
+  const requestedModel = options?.model || AI_MODELS.FAST
+  const isValidModel = AVAILABLE_MODELS.some(m => m.id === requestedModel)
+  
+  const selectedModel = isValidModel ? requestedModel : AI_MODELS.FAST
+  
+  if (!isValidModel) {
+    console.warn(
+      `MAIA Gateway: Model identifier "${requestedModel}" tidak valid. Mengalihkan otomatis ke fallback: "${AI_MODELS.FAST}".`
+    )
+  }
 
   // Map AI Mode to temperature as requested:
   // Focus -> 0.2, Creative -> 0.9, Balanced -> 0.7
@@ -74,9 +90,25 @@ export async function generateGatewayResponse(
       latency,
     }
   } catch (error: any) {
-    console.error("MAIA Gateway Error:", error)
-    throw new Error(
-      error?.message || "MAIA Gateway failed to generate a response."
-    )
+    console.error("MAIA Gateway Error Details:", error)
+    
+    // 4. Improve Error Handling: Clean raw LiteLLM or provider internal errors
+    const rawMessage = error?.message || ""
+    let cleanMessage = "Sistem gagal memproses instruksi AI. Mohon coba lagi beberapa saat lagi."
+    
+    if (
+      rawMessage.includes("litellm") || 
+      rawMessage.includes("BadRequestError") || 
+      rawMessage.includes("Model Group") ||
+      rawMessage.includes("You passed in model")
+    ) {
+      cleanMessage = "Terjadi kesalahan konfigurasi model pada AI Gateway. Sistem dialihkan kembali menggunakan model default."
+    } else if (rawMessage.includes("API key") || rawMessage.includes("Unauthorized")) {
+      cleanMessage = "Akses ditolak oleh AI Gateway. Harap periksa kevalidan MAIA API Key Anda."
+    } else if (error?.code === "ENOTFOUND" || rawMessage.includes("fetch failed")) {
+      cleanMessage = "Gagal menghubungi AI Gateway. Pastikan server memiliki koneksi internet yang stabil."
+    }
+
+    throw new Error(cleanMessage)
   }
 }

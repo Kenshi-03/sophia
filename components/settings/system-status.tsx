@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { Database, Cpu, Activity, ShieldAlert, Sparkles, RefreshCw } from "lucide-react"
 import { useSettingsStore } from "@/stores/use-settings-store"
+import { AVAILABLE_MODELS } from "@/lib/ai/config/models"
 
 interface SystemStatusProps {
   memoryNodesCount: number
@@ -34,7 +35,8 @@ export default function SystemStatus({ memoryNodesCount }: SystemStatusProps) {
     setIsRunningDiagnostic(false)
   }
 
-  const activeModel = mounted ? settings.defaultAiModel : "maia/gemini-2.5-flash"
+  const activeModelId = mounted ? settings.defaultAiModel : "maia/gemini-2.5-flash"
+  const activeModelLabel = AVAILABLE_MODELS.find(m => m.id === activeModelId)?.label || activeModelId
 
   const metrics = [
     {
@@ -56,7 +58,7 @@ export default function SystemStatus({ memoryNodesCount }: SystemStatusProps) {
       statusClass: "bg-[#c0c1ff]/10 text-[#c0c1ff]",
       stats: [
         { label: "Gateway Latency", value: `${aiLatency}ms` },
-        { label: "Active Model", value: activeModel },
+        { label: "Active Model", value: activeModelLabel },
       ],
     },
     {

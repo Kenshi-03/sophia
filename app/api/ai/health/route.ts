@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
+import { AI_MODELS } from "@/lib/ai/config/models"
 
 export async function GET() {
   const apiKey = process.env.MAIA_API_KEY || ""
@@ -23,7 +24,7 @@ export async function GET() {
 
     // Uji koneksi ringan menggunakan model awal terkecil/tercepat
     await openai.chat.completions.create({
-      model: "maia/gemini-2.5-flash",
+      model: AI_MODELS.FAST,
       messages: [{ role: "user", content: "ping" }],
       max_tokens: 1,
     })
