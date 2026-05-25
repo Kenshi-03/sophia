@@ -8,6 +8,7 @@ import {
   mockAgents,
 } from "@/lib/db/mocks"
 import WelcomeHeader from "@/components/dashboard/welcome-header"
+import CognitiveBriefingCard from "@/components/dashboard/cognitive-briefing-card"
 import CurrentFocusCard from "@/components/dashboard/current-focus-card"
 import ActiveAgentsWidget from "@/components/dashboard/active-agents-widget"
 import IntegratedScheduleWidget from "@/components/dashboard/integrated-schedule-widget"
@@ -186,6 +187,9 @@ export default async function DashboardPage() {
     <div className="space-y-8 pb-12 font-sans">
       {/* Header Greeting & Cognitive Load Indicator */}
       <WelcomeHeader name={name} cognitiveLoad={cognitiveLoad} />
+
+      {/* Cognitive Intelligence Briefing Module */}
+      <CognitiveBriefingCard />
 
       {/* Main Bento Grid Layout */}
       <div className="grid grid-cols-12 gap-6">
