@@ -99,12 +99,15 @@ export default function GeneralSettings() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          userName: name,
           theme,
           aiModel: model,
           aiMode,
           memoryDepth,
           productivityIntensity,
           localAIEnabled,
+          cognitiveThreshold: threshold,
+          autoDndFocus: dnd,
         }),
       })
 
@@ -116,15 +119,15 @@ export default function GeneralSettings() {
       const updatedSettings = await response.json()
 
       // Update Zustand local store
-      settings.setUserName(name)
+      settings.setUserName(updatedSettings.userName)
       settings.setAiModel(updatedSettings.aiModel)
       settings.setAiMode(updatedSettings.aiMode)
       settings.setMemoryDepth(updatedSettings.memoryDepth)
       settings.setProductivityIntensity(updatedSettings.productivityIntensity)
       settings.setLocalAIEnabled(updatedSettings.localAIEnabled)
       settings.setTheme(updatedSettings.theme)
-      settings.setCognitiveThreshold(threshold)
-      settings.setAutoDndFocus(dnd)
+      settings.setCognitiveThreshold(updatedSettings.cognitiveThreshold)
+      settings.setAutoDndFocus(updatedSettings.autoDndFocus)
 
       setShowSuccess(true)
     } catch (err: any) {

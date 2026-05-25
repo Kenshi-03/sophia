@@ -25,6 +25,10 @@ export async function getSettings(userId: string): Promise<UserSettings> {
         memoryDepth: 10,
         productivityIntensity: "balanced",
         localAIEnabled: false,
+        cognitiveThreshold: 75,
+        themeAccent: "lavender",
+        autoSyncCalendar: true,
+        autoDndFocus: true,
       },
     })
   } catch (error) {
@@ -41,6 +45,10 @@ export async function getSettings(userId: string): Promise<UserSettings> {
         memoryDepth: 10,
         productivityIntensity: "balanced",
         localAIEnabled: false,
+        cognitiveThreshold: 75,
+        themeAccent: "lavender",
+        autoSyncCalendar: true,
+        autoDndFocus: true,
       },
     })
   }
@@ -63,7 +71,11 @@ export async function updateSettings(
       aiMode: data.aiMode || "balanced",
       memoryDepth: data.memoryDepth || 10,
       productivityIntensity: data.productivityIntensity || "balanced",
-      localAIEnabled: data.localAIEnabled || false,
+      localAIEnabled: data.localAIEnabled !== undefined ? data.localAIEnabled : false,
+      cognitiveThreshold: data.cognitiveThreshold || 75,
+      themeAccent: data.themeAccent || "lavender",
+      autoSyncCalendar: data.autoSyncCalendar !== undefined ? data.autoSyncCalendar : true,
+      autoDndFocus: data.autoDndFocus !== undefined ? data.autoDndFocus : true,
     },
   })
 }

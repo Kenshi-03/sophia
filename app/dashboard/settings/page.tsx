@@ -17,9 +17,10 @@ export default async function SettingsPage() {
 
   let memoryNodesCount = 0
   let initialSettings = null
+  let dbUser = null
 
   try {
-    const dbUser = await prisma.user.findUnique({
+    dbUser = await prisma.user.findUnique({
       where: { email },
       include: {
         _count: {
@@ -41,6 +42,7 @@ export default async function SettingsPage() {
         },
       })
       if (seedUser) {
+        dbUser = seedUser
         memoryNodesCount = seedUser._count.memories
         initialSettings = await getSettings(seedUser.id)
       }
@@ -54,6 +56,7 @@ export default async function SettingsPage() {
   const serializedSettings = initialSettings
     ? {
         ...initialSettings,
+        userName: (dbUser?.name || "Sophia Dev"),
         createdAt: initialSettings.createdAt?.toISOString(),
         updatedAt: initialSettings.updatedAt?.toISOString(),
       }

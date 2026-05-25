@@ -21,7 +21,10 @@ export async function GET() {
     }
 
     const settings = await getSettings(dbUser.id)
-    return NextResponse.json(settings)
+    return NextResponse.json({
+      ...settings,
+      userName: dbUser.name || "Sophia Dev"
+    })
   } catch (error: any) {
     console.error("GET /api/settings error:", error)
     return NextResponse.json(
@@ -62,6 +65,18 @@ export async function POST(req: Request) {
     if (typeof body.localAIEnabled === "boolean") {
       updatedFields.localAIEnabled = body.localAIEnabled
     }
+    if (typeof body.cognitiveThreshold === "number") {
+      updatedFields.cognitiveThreshold = body.cognitiveThreshold
+    }
+    if (typeof body.themeAccent === "string") {
+      updatedFields.themeAccent = body.themeAccent
+    }
+    if (typeof body.autoSyncCalendar === "boolean") {
+      updatedFields.autoSyncCalendar = body.autoSyncCalendar
+    }
+    if (typeof body.autoDndFocus === "boolean") {
+      updatedFields.autoDndFocus = body.autoDndFocus
+    }
     
     if (body.memoryDepth !== undefined) {
       const depth = parseInt(body.memoryDepth, 10)
@@ -75,8 +90,26 @@ export async function POST(req: Request) {
       }
     }
 
+    // Update userName in User table if provided
+    if (typeof body.userName === "string") {
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: { name: body.userName },
+      })
+    }
+
     const settings = await updateSettings(dbUser.id, updatedFields)
-    return NextResponse.json(settings)
+    
+    // Return unified object including the updated name
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: dbUser.id },
+      select: { name: true }
+    })
+
+    return NextResponse.json({
+      ...settings,
+      userName: updatedUser?.name || "Sophia Dev"
+    })
   } catch (error: any) {
     console.error("POST /api/settings error:", error)
     return NextResponse.json(

@@ -193,3 +193,25 @@
     opacity: 0.3;
   }
 }
+
+/* SOPHIA Cognitive Theme Accent Variable Overrides */
+.theme-lavender {
+  --primary: #c0c1ff;
+  --primary-foreground: #1000a9;
+  --ring: #c0c1ff;
+  --primary-container: #8083ff;
+}
+
+.theme-mint {
+  --primary: #4edea3;
+  --primary-foreground: #111316;
+  --ring: #4edea3;
+  --primary-container: #00a572;
+}
+
+.theme-blue {
+  --primary: #adc6ff;
+  --primary-foreground: #002d6b;
+  --ring: #adc6ff;
+  --primary-container: #4d8eff;
+}

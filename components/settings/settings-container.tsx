@@ -21,6 +21,7 @@ export default function SettingsContainer({ hasCredentials, memoryNodesCount, in
   useEffect(() => {
     if (initialSettings) {
       settingsStore.hydrateStore({
+        userName: initialSettings.userName,
         theme: initialSettings.theme,
         aiModel: initialSettings.aiModel,
         defaultAiModel: initialSettings.aiModel,
@@ -28,6 +29,10 @@ export default function SettingsContainer({ hasCredentials, memoryNodesCount, in
         memoryDepth: initialSettings.memoryDepth,
         productivityIntensity: initialSettings.productivityIntensity,
         localAIEnabled: initialSettings.localAIEnabled,
+        cognitiveThreshold: initialSettings.cognitiveThreshold,
+        themeAccent: initialSettings.themeAccent,
+        autoSyncCalendar: initialSettings.autoSyncCalendar,
+        autoDndFocus: initialSettings.autoDndFocus,
       })
     }
   }, [initialSettings])

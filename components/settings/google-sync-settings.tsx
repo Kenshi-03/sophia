@@ -39,16 +39,32 @@ export default function GoogleSyncSettings({ hasCredentials }: GoogleSyncSetting
     setIsSaving(true)
     setShowSuccess(false)
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          autoSyncCalendar: autoSync,
+        }),
+      })
 
-    settings.setAutoSyncCalendar(autoSync)
+      if (!response.ok) {
+        throw new Error("Gagal menyimpan ke cloud database.")
+      }
 
-    setIsSaving(false)
-    setShowSuccess(true)
-
-    setTimeout(() => {
-      setShowSuccess(false)
-    }, 3000)
+      const updated = await response.json()
+      settings.setAutoSyncCalendar(updated.autoSyncCalendar)
+      setShowSuccess(true)
+    } catch (err) {
+      console.error("Gagal menyimpan pengaturan Google Sync:", err)
+    } finally {
+      setIsSaving(false)
+      setTimeout(() => {
+        setShowSuccess(false)
+      }, 3000)
+    }
   }
 
   return (

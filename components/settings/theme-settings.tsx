@@ -7,6 +7,7 @@ import { Palette, Check, Sparkles, Loader2 } from "lucide-react"
 export default function ThemeSettings() {
   const settings = useSettingsStore()
   const [mounted, setMounted] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -19,6 +20,34 @@ export default function ThemeSettings() {
       root.classList.add(`theme-${settings.themeAccent}`)
     }
   }, [settings?.themeAccent, mounted])
+
+  const handleSelectAccent = async (accentId: "lavender" | "mint" | "blue") => {
+    if (isSaving) return
+    setIsSaving(true)
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          themeAccent: accentId,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Gagal menyimpan aksen tema.")
+      }
+
+      const updated = await response.json()
+      settings.setThemeAccent(updated.themeAccent)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   if (!mounted) {
     return (
@@ -77,7 +106,8 @@ export default function ThemeSettings() {
             return (
               <button
                 key={accent.id}
-                onClick={() => settings.setThemeAccent(accent.id)}
+                onClick={() => handleSelectAccent(accent.id)}
+                disabled={isSaving}
                 className={`p-4 border text-left rounded-2xl flex flex-col justify-between h-40 transition-all duration-300 relative group cursor-pointer ${
                   isSelected
                     ? `bg-[#1e2023]/80 ${accent.borderClass} ring-1 ring-white/10`

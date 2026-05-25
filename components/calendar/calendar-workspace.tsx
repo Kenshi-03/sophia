@@ -172,17 +172,6 @@ export default function CalendarWorkspace({
         description="Analisis jadwal harian Anda dan konversi data aktivitas menjadi insight kognitif."
       >
         <button
-          onClick={() => {
-            const btn = document.querySelector('button[onClick*="Sync Now"]') as HTMLButtonElement | null
-            if (btn) btn.click()
-          }}
-          className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white hover:border-[#c0c1ff]/30 transition-all duration-200 cursor-pointer"
-        >
-          <RefreshCw size={14} className="text-[#c7c4d7]" />
-          <span>Sync Google Calendar</span>
-        </button>
-        
-        <button
           onClick={() => handleOpenEditor(null)}
           className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 cursor-pointer"
         >

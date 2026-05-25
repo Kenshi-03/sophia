@@ -127,6 +127,11 @@ model UserSettings {
 
   localAIEnabled         Boolean  @default(false)
 
+  cognitiveThreshold     Int      @default(75)
+  themeAccent            String   @default("lavender")
+  autoSyncCalendar       Boolean  @default(true)
+  autoDndFocus           Boolean  @default(true)
+
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
