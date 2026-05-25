@@ -1,15 +1,16 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Clock, MapPin, Sparkles, Activity, Tag, Plus, Calendar as CalendarIcon } from "lucide-react"
+import { Clock, MapPin, Sparkles, Activity, Tag, Calendar as CalendarIcon, Move } from "lucide-react"
 import { CalendarEvent } from "@/types/calendar"
 
 interface CalendarTimelineProps {
   events: CalendarEvent[]
   onSelectEvent: (event: CalendarEvent) => void
+  onRefresh: () => void
 }
 
-export default function CalendarTimeline({ events, onSelectEvent }: CalendarTimelineProps) {
+export default function CalendarTimeline({ events, onSelectEvent, onRefresh }: CalendarTimelineProps) {
   const [activeTab, setActiveTab] = useState<"weekly" | "daily">("weekly")
   
   // Generate days of the current week dynamically
@@ -49,7 +50,7 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
     return isSameDay(eventDate, selectedDate)
   })
 
-  // Format time (e.g. 09:00 AM)
+  // Format time (e.g. 09:00)
   const formatTime = (time: Date | string) => {
     return new Date(time).toLocaleTimeString("id-ID", {
       hour: "2-digit",
@@ -57,9 +58,9 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
     })
   }
 
-  // Hours list for Daily Timeline (08:00 - 20:00)
-  const timelineHours = Array.from({ length: 13 }).map((_, i) => {
-    const hourNum = 8 + i
+  // Hours list for Daily Timeline (07:00 - 22:00)
+  const timelineHours = Array.from({ length: 16 }).map((_, i) => {
+    const hourNum = 7 + i
     return `${hourNum.toString().padStart(2, "0")}:00`
   })
 
@@ -68,9 +69,79 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
     const hourNum = parseInt(hourStr.split(":")[0])
     return events.filter((event) => {
       const eventDate = new Date(event.startTime)
-      // Check if same day as selectedDate AND starts at this hour
       return isSameDay(eventDate, selectedDate) && eventDate.getHours() === hourNum
     })
+  }
+
+  // HTML5 Drag and Drop Handlers
+  const handleDragStart = (e: React.DragEvent, eventId: string) => {
+    e.dataTransfer.setData("text/plain", eventId)
+    // Add opacity or visual effect during drag
+    e.currentTarget.classList.add("opacity-50")
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove("opacity-50")
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault() // Required to allow dropping
+  }
+
+  const handleDrop = async (e: React.DragEvent, hourStr: string) => {
+    e.preventDefault()
+    const eventId = e.dataTransfer.getData("text/plain")
+    const eventToMove = events.find((ev) => ev.id === eventId)
+    
+    if (!eventToMove) return
+
+    const targetHour = parseInt(hourStr.split(":")[0])
+    
+    // Construct new dates while retaining year, month, date
+    const newStart = new Date(eventToMove.startTime)
+    // Keep target day the same as currently selected date to prevent calendar day shifting
+    newStart.setFullYear(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
+    newStart.setHours(targetHour, 0, 0, 0)
+
+    const originalDurationMs = 
+      new Date(eventToMove.endTime).getTime() - new Date(eventToMove.startTime).getTime()
+    
+    const newEnd = new Date(newStart.getTime() + originalDurationMs)
+
+    // Optimistic UI update
+    const updatedEvents = events.map((ev) => {
+      if (ev.id === eventId) {
+        return {
+          ...ev,
+          startTime: newStart.toISOString(),
+          endTime: newEnd.toISOString(),
+        }
+      }
+      return ev
+    })
+    
+    // Temporarily trigger local state update for fast response
+    // Trigger actual fetch updates afterwards
+    try {
+      const res = await fetch(`/api/calendar/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startTime: newStart.toISOString(),
+          endTime: newEnd.toISOString(),
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error("Gagal menyimpan reschedule")
+      }
+
+      onRefresh()
+    } catch (err) {
+      console.error(err)
+      alert("Gagal menjadwalkan ulang agenda.")
+      onRefresh()
+    }
   }
 
   return (
@@ -87,7 +158,7 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
         <div className="flex bg-white/[0.02] border border-white/5 rounded-xl p-1 w-full sm:w-auto">
           <button
             onClick={() => setActiveTab("weekly")}
-            className={`flex-1 sm:flex-initial px-3 py-1.5 text-center text-xs font-semibold rounded-lg transition-all ${
+            className={`flex-1 sm:flex-initial px-3 py-1.5 text-center text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               activeTab === "weekly" ? "bg-[#c0c1ff]/15 text-[#c0c1ff]" : "text-[#c7c4d7]/70 hover:text-white"
             }`}
           >
@@ -95,7 +166,7 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
           </button>
           <button
             onClick={() => setActiveTab("daily")}
-            className={`flex-1 sm:flex-initial px-3 py-1.5 text-center text-xs font-semibold rounded-lg transition-all ${
+            className={`flex-1 sm:flex-initial px-3 py-1.5 text-center text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               activeTab === "daily" ? "bg-[#c0c1ff]/15 text-[#c0c1ff]" : "text-[#c7c4d7]/70 hover:text-white"
             }`}
           >
@@ -155,29 +226,42 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
             <div className="space-y-3">
               {selectedDateEvents.map((event) => {
                 const isFocus = event.isFocusMode || false
-                
+                const categoryColor = event.color || "#8083ff"
+                const load = event.cognitiveLoad || 0
+
                 return (
                   <div
                     key={event.id}
                     onClick={() => onSelectEvent(event)}
-                    className={`p-4 border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 cursor-pointer ${
-                      isFocus
-                        ? "bg-gradient-to-br from-[#c0c1ff]/10 to-[#8083ff]/5 border-[#c0c1ff]/30 hover:border-[#c0c1ff]/50"
-                        : "bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]"
-                    }`}
+                    className="p-4 border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 cursor-pointer hover:shadow-lg"
+                    style={{
+                      borderColor: `${categoryColor}33`,
+                      background: `linear-gradient(135deg, ${categoryColor}15, ${categoryColor}05)`,
+                    }}
                   >
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1.5 items-center">
-                        <span className={`text-[8px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${
-                          isFocus ? "bg-[#c0c1ff]/20 text-[#c0c1ff]" : "bg-white/5 text-[#c7c4d7]/70"
-                        }`}>
-                          {isFocus ? "Focus Mode" : "Event"}
+                        <span
+                          className="text-[8px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border"
+                          style={{
+                            color: categoryColor,
+                            borderColor: `${categoryColor}44`,
+                            backgroundColor: `${categoryColor}11`,
+                          }}
+                        >
+                          {event.categoryName || (isFocus ? "Focus Mode" : "Event")}
                         </span>
                         
-                        {event.cognitiveLoad && (
-                          <span className="text-[8px] font-mono font-bold bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 text-[#ffb4ab] px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        {load !== 0 && (
+                          <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 border ${
+                            load >= 70
+                              ? "bg-[#ffb4ab]/10 border-[#ffb4ab]/20 text-[#ffb4ab]"
+                              : load < 0
+                              ? "bg-[#4edea3]/10 border-[#4edea3]/20 text-[#4edea3]"
+                              : "bg-[#adc6ff]/10 border-[#adc6ff]/20 text-[#adc6ff]"
+                          }`}>
                             <Activity size={8} />
-                            Load: {event.cognitiveLoad}%
+                            Load: {load > 0 ? `+${load}%` : `${load}%`}
                           </span>
                         )}
                       </div>
@@ -225,14 +309,19 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
               const hourEvents = getEventsForHour(hourStr)
               
               return (
-                <div key={hourStr} className="flex min-h-[4.5rem] group/row">
+                <div
+                  key={hourStr}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, hourStr)}
+                  className="flex min-h-[4.5rem] group/row transition-colors duration-150 hover:bg-white/[0.01]"
+                >
                   {/* Left Hour Label */}
                   <div className="w-16 flex justify-center items-start pt-3 border-r border-white/5 font-mono text-[10px] text-[#c7c4d7]/40">
                     {hourStr}
                   </div>
 
                   {/* Right Event Slots container */}
-                  <div className="flex-1 p-2 flex flex-col gap-2 justify-center bg-white/[0.005] group-hover/row:bg-white/[0.015] transition-colors">
+                  <div className="flex-1 p-2 flex flex-col gap-2 justify-center bg-white/[0.005]">
                     {hourEvents.length === 0 ? (
                       <div className="text-[9px] text-[#c7c4d7]/20 pl-2 font-mono select-none">
                         Empty cognitive slot
@@ -240,30 +329,50 @@ export default function CalendarTimeline({ events, onSelectEvent }: CalendarTime
                     ) : (
                       hourEvents.map((event) => {
                         const isFocus = event.isFocusMode || false
-                        
+                        const categoryColor = event.color || "#8083ff"
+                        const load = event.cognitiveLoad || 0
+
                         return (
                           <div
                             key={event.id}
+                            draggable="true"
+                            onDragStart={(e) => handleDragStart(e, event.id)}
+                            onDragEnd={handleDragEnd}
                             onClick={() => onSelectEvent(event)}
-                            className={`p-2 px-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                              isFocus
-                                ? "bg-gradient-to-r from-[#c0c1ff]/10 to-[#8083ff]/5 border-[#c0c1ff]/20 hover:border-[#c0c1ff]/40 text-[#c0c1ff]"
-                                : "bg-white/5 border-white/5 hover:border-white/10 hover:bg-white/[0.06] text-white"
-                            }`}
+                            className="p-2 px-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all hover:scale-[1.01] active:cursor-grabbing group/card"
+                            style={{
+                              borderColor: `${categoryColor}44`,
+                              background: `linear-gradient(90deg, ${categoryColor}15, ${categoryColor}05)`,
+                            }}
                           >
-                            <div className="space-y-0.5 min-w-0">
-                              <h5 className="text-xs font-bold truncate">{event.title}</h5>
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <Move size={10} className="text-[#c7c4d7]/30 opacity-0 group-hover/card:opacity-100 transition-opacity shrink-0" />
+                                <h5 className="text-xs font-bold truncate text-white">{event.title}</h5>
+                              </div>
                               <p className="text-[10px] text-[#c7c4d7]/50 font-mono truncate">
                                 {formatTime(event.startTime)} - {formatTime(event.endTime)}
                                 {event.location && ` • ${event.location}`}
                               </p>
                             </div>
 
-                            {event.cognitiveLoad && (
-                              <span className="text-[8px] font-mono font-bold bg-white/5 border border-white/5 text-[#c7c4d7] px-1.5 py-0.5 rounded shrink-0">
-                                Load: {event.cognitiveLoad}%
-                              </span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {load !== 0 && (
+                                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                                  load >= 70
+                                    ? "bg-[#ffb4ab]/10 border-[#ffb4ab]/20 text-[#ffb4ab]"
+                                    : load < 0
+                                    ? "bg-[#4edea3]/10 border-[#4edea3]/20 text-[#4edea3]"
+                                    : "bg-[#adc6ff]/10 border-[#adc6ff]/20 text-[#adc6ff]"
+                                }`}>
+                                  Load: {load > 0 ? `+${load}%` : `${load}%`}
+                                </span>
+                              )}
+                              <span
+                                className="h-2 w-2 rounded-full shrink-0"
+                                style={{ backgroundColor: categoryColor }}
+                              />
+                            </div>
                           </div>
                         )
                       })

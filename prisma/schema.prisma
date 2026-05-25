@@ -21,6 +21,7 @@ model User {
   tasks         Task[]
   events        Event[]
   settings      UserSettings?
+  categories    CalendarCategory[]
 
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -90,18 +91,23 @@ model Task {
 }
 
 model Event {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime
-  location    String?
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  startTime     DateTime
+  endTime       DateTime
+  location      String?
 
-  userId      String
-  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleEventId String?  @unique
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  calendarId    String
+  calendar      CalendarCategory @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  userId        String
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model UserSettings {
@@ -123,4 +129,27 @@ model UserSettings {
 
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+}
+
+model CalendarCategory {
+  id            String   @id @default(cuid())
+
+  name          String
+  description   String?
+
+  color         String?
+
+  googleCalId   String   @unique
+
+  categoryType  String?
+
+  isActive      Boolean  @default(true)
+
+  userId        String
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  events        Event[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

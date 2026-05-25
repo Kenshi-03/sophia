@@ -59,9 +59,10 @@ export default function IntegratedScheduleWidget({ events }: IntegratedScheduleW
                 <div className="text-[10px] font-mono font-bold text-[#c7c4d7]/60 whitespace-nowrap pt-1 w-12">
                   {startStr}
                 </div>
-                <div className={`border-l-2 pl-3 space-y-0.5 group-hover/item:border-white transition-all duration-200 ${
-                  isActive ? "border-[#c0c1ff]" : "border-white/10"
-                }`}>
+                <div 
+                  className="border-l-2 pl-3 space-y-0.5 group-hover/item:border-white transition-all duration-200"
+                  style={{ borderColor: event.color || "rgba(255, 255, 255, 0.1)" }}
+                >
                   <h4 className="text-xs font-semibold text-white group-hover/item:text-[#c0c1ff] transition-colors duration-200">
                     {event.title}
                   </h4>

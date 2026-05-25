@@ -1,8 +1,9 @@
 "use client"
 
 import React, { useState } from "react"
-import { RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Key, Check } from "lucide-react"
+import { RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Key, Check, AlertCircle } from "lucide-react"
 import { CalendarEvent } from "@/types/calendar"
+import { signIn } from "next-auth/react"
 
 interface SyncStatusPanelProps {
   hasCredentials: boolean
@@ -18,14 +19,17 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
   const [showGuide, setShowGuide] = useState(false)
   const [lastSync, setLastSync] = useState<string>("Belum disinkronkan")
   const [syncSuccess, setSyncSuccess] = useState(false)
+  const [isOAuthError, setIsOAuthError] = useState(false)
 
   const handleSync = async () => {
     setIsSyncing(true)
     setSyncSuccess(false)
+    setIsOAuthError(false)
     
     // Add sync starting log
+    const startTimeStr = new Date().toLocaleTimeString("id-ID")
     setSyncLogs((prev) => [
-      `[${new Date().toLocaleTimeString()}] Memulai sinkronisasi Google Calendar...`,
+      `[${startTimeStr}] Memulai sinkronisasi Google Calendar...`,
       ...prev,
     ])
 
@@ -34,12 +38,16 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
         method: "POST",
       })
 
+      const syncResult = await res.json()
+
       if (!res.ok) {
-        throw new Error(`Sync returned status ${res.status}`)
+        if (syncResult.isOAuthError) {
+          setIsOAuthError(true)
+        }
+        throw new Error(syncResult.details || syncResult.error || `Sync returned status ${res.status}`)
       }
 
-      const syncResult = await res.json()
-      const isLocal = syncResult.mode === 'local'
+      const isLocal = syncResult.mode === "local"
 
       // Fetch newly updated events list
       const todayRes = await fetch("/api/calendar/today")
@@ -60,7 +68,7 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
       setLastSync(nowStr)
 
       setSyncLogs((prev) => [
-        `[${nowStr}] Sukses: Sinkronisasi selesai. Berhasil memperbarui agenda (${isLocal ? 'Database Lokal' : 'Google Cloud'}).`,
+        `[${nowStr}] Sukses: Sinkronisasi selesai. Berhasil memperbarui agenda (${isLocal ? "Database Lokal" : "Google Cloud"}).`,
         `[${nowStr}] Info: Mengindeks ${updatedEvents.length} agenda berdasarkan rekomendasi produktivitas.`,
         ...prev,
       ])
@@ -72,7 +80,7 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
       console.error(error)
       setIsSyncing(false)
       setSyncLogs((prev) => [
-        `[${new Date().toLocaleTimeString()}] Error: Sinkronisasi gagal. ${error?.message || ''}`,
+        `[${new Date().toLocaleTimeString()}] Error: Sinkronisasi gagal. ${error?.message || ""}`,
         ...prev,
       ])
     }
@@ -83,6 +91,13 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
     }, 300)
   }
 
+  const handleReconnect = () => {
+    signIn("google", {
+      callbackUrl: "/dashboard/calendar",
+      prompt: "consent",
+    })
+  }
+
   return (
     <div className="glass-panel rounded-3xl p-6 space-y-4">
       <div className="flex justify-between items-center">
@@ -90,14 +105,14 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
         
         {/* Status Pill */}
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${
-          hasCredentials 
+          hasCredentials && !isOAuthError
             ? "bg-[#4edea3]/10 border-[#4edea3]/20 text-[#4edea3]"
             : "bg-[#ffb4ab]/10 border-[#ffb4ab]/20 text-[#ffb4ab]"
         }`}>
           <span className={`h-1.5 w-1.5 rounded-full ${
-            hasCredentials ? "bg-[#4edea3] animate-pulse" : "bg-[#ffb4ab]"
+            hasCredentials && !isOAuthError ? "bg-[#4edea3] animate-pulse" : "bg-[#ffb4ab]"
           }`} />
-          <span>{hasCredentials ? "Google Connected" : "Local Database"}</span>
+          <span>{hasCredentials && !isOAuthError ? "Google Connected" : isOAuthError ? "Auth Error" : "Local Database"}</span>
         </span>
       </div>
 
@@ -111,7 +126,7 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
         <button
           onClick={handleSync}
           disabled={isSyncing}
-          className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50`}
+          className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50 cursor-pointer`}
         >
           {isSyncing ? (
             <RefreshCw size={14} className="animate-spin text-white" />
@@ -123,6 +138,27 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
           <span>{isSyncing ? "Menyinkronkan..." : "Sync Now"}</span>
         </button>
       </div>
+
+      {/* OAuth Permission Warning */}
+      {isOAuthError && (
+        <div className="border border-[#ffb4ab]/15 bg-[#ffb4ab]/5 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle size={16} className="text-[#ffb4ab] shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-white">Izin Kalender Diperlukan</h4>
+              <p className="text-[11px] text-[#c7c4d7]/70 leading-relaxed">
+                SOPHIA memerlukan otorisasi ulang untuk menulis dan membaca data di Google Calendar Anda.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleReconnect}
+            className="w-full py-2 bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 text-[#ffb4ab] text-xs font-semibold rounded-xl hover:bg-[#ffb4ab]/20 transition-all cursor-pointer"
+          >
+            Hubungkan Ulang Google Calendar
+          </button>
+        </div>
+      )}
 
       {/* Credentials Warning & Installation Guide */}
       {!hasCredentials && (
@@ -141,7 +177,7 @@ export default function SyncStatusPanel({ hasCredentials, onSyncComplete }: Sync
           <div className="border-t border-white/5 pt-2">
             <button
               onClick={() => setShowGuide(!showGuide)}
-              className="flex items-center justify-between w-full text-[10px] text-[#c0c1ff] hover:text-white transition-colors"
+              className="flex items-center justify-between w-full text-[10px] text-[#c0c1ff] hover:text-white transition-colors cursor-pointer"
             >
               <span className="flex items-center gap-1.5">
                 <Key size={12} />

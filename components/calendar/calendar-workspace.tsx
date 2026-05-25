@@ -6,32 +6,83 @@ import PageHeader from "@/components/shared/page-header"
 import CalendarTimeline from "./calendar-timeline"
 import SyncStatusPanel from "./sync-status-panel"
 import EventDetailsModal from "./event-details-modal"
+import EventEditor from "./event-editor"
 import { CalendarEvent } from "@/types/calendar"
 import { saveFocusBlockAction } from "@/app/actions/schedule"
 import { useSettingsStore } from "@/stores/use-settings-store"
 
+interface CalendarCategory {
+  id: string
+  name: string
+  color: string | null
+  categoryType: string | null
+}
+
 interface CalendarWorkspaceProps {
   initialEvents: CalendarEvent[]
+  initialCategories: CalendarCategory[]
   hasCredentials: boolean
 }
 
-export default function CalendarWorkspace({ initialEvents, hasCredentials }: CalendarWorkspaceProps) {
+export default function CalendarWorkspace({
+  initialEvents,
+  initialCategories,
+  hasCredentials,
+}: CalendarWorkspaceProps) {
   const settings = useSettingsStore()
+  
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
+  const [categories, setCategories] = useState<CalendarCategory[]>(initialCategories)
+  
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  
+  const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
+
   const [aiAnalysis, setAiAnalysis] = useState<string>("Menganalisis jadwal Anda...")
   const [recommendedFocus, setRecommendedFocus] = useState<CalendarEvent | null>(null)
   const [isLoadingInsights, setIsLoadingInsights] = useState(false)
 
-  const handleSelectEvent = (event: CalendarEvent) => {
-    setSelectedEvent(event)
-    setIsModalOpen(true)
+  // Fetch updated data from API to refresh both events and categories
+  const refreshCalendarData = async () => {
+    try {
+      const res = await fetch("/api/calendar")
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setEvents(data.events)
+          setCategories(data.categories)
+        }
+      }
+    } catch (error) {
+      console.error("Gagal memperbarui data kalender:", error)
+    }
   }
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
+  // Load categories and fresh events on mount
+  useEffect(() => {
+    refreshCalendarData()
+  }, [])
+
+  const handleSelectEvent = (event: CalendarEvent) => {
+    setSelectedEvent(event)
+    setIsDetailsOpen(true)
+  }
+
+  const handleCloseDetails = () => {
+    setIsDetailsOpen(false)
     setSelectedEvent(null)
+  }
+
+  const handleOpenEditor = (eventToEdit: CalendarEvent | null) => {
+    setEditingEvent(eventToEdit)
+    setIsEditorOpen(true)
+  }
+
+  const handleCloseEditor = () => {
+    setIsEditorOpen(false)
+    setEditingEvent(null)
   }
 
   const fetchInsights = async (currentEvents: CalendarEvent[]) => {
@@ -78,22 +129,35 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
   }
 
   useEffect(() => {
-    fetchInsights(events)
+    if (events.length > 0) {
+      fetchInsights(events)
+    }
   }, [events])
 
   const handleApplyRecommendation = async () => {
-    if (!recommendedFocus) return
+    if (!recommendedFocus || categories.length === 0) return
+
+    // Find the Deep Work category id to link
+    const deepWorkCategory = categories.find(c => c.categoryType === "deep-work") || categories[0]
 
     try {
-      const result = await saveFocusBlockAction(recommendedFocus)
-      if (result.success) {
-        const res = await fetch("/api/calendar/today")
-        if (res.ok) {
-          const updatedEvents = await res.json()
-          setEvents(updatedEvents)
-        }
+      const res = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: recommendedFocus.title,
+          description: recommendedFocus.description,
+          startTime: recommendedFocus.startTime,
+          endTime: recommendedFocus.endTime,
+          location: recommendedFocus.location,
+          calendarId: deepWorkCategory.id,
+        }),
+      })
+
+      if (res.ok) {
+        refreshCalendarData()
       } else {
-        console.error("Failed to save focus block:", result.error)
+        console.error("Failed to save recommended focus block")
       }
     } catch (error) {
       console.error("Error applying focus block recommendation:", error)
@@ -101,7 +165,7 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
   }
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+    <div className="space-y-6 max-w-6xl mx-auto pb-12 font-sans">
       {/* Page Header */}
       <PageHeader
         title="Calendar Intelligence"
@@ -112,12 +176,16 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
             const btn = document.querySelector('button[onClick*="Sync Now"]') as HTMLButtonElement | null
             if (btn) btn.click()
           }}
-          className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white hover:border-[#c0c1ff]/30 transition-all duration-200"
+          className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white hover:border-[#c0c1ff]/30 transition-all duration-200 cursor-pointer"
         >
           <RefreshCw size={14} className="text-[#c7c4d7]" />
           <span>Sync Google Calendar</span>
         </button>
-        <button className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95">
+        
+        <button
+          onClick={() => handleOpenEditor(null)}
+          className="inline-flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 cursor-pointer"
+        >
           <Plus size={14} />
           <span>Tambah Agenda</span>
         </button>
@@ -128,7 +196,11 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
         
         {/* Left Column: Calendar Timeline View (Col span: 2) */}
         <div className="lg:col-span-2">
-          <CalendarTimeline events={events} onSelectEvent={handleSelectEvent} />
+          <CalendarTimeline 
+            events={events} 
+            onSelectEvent={handleSelectEvent} 
+            onRefresh={refreshCalendarData}
+          />
         </div>
 
         {/* Right Column: AI Recommendations & Google Sync Status */}
@@ -153,7 +225,7 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
                 <div className="pt-2">
                   <button
                     onClick={handleApplyRecommendation}
-                    className="w-full py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 transition-all duration-200 active:scale-95"
+                    className="w-full py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 transition-all duration-200 active:scale-95 cursor-pointer"
                   >
                     Terapkan Rekomendasi Fokus
                   </button>
@@ -172,8 +244,18 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
       {/* Dynamic Detail Popup Modal */}
       <EventDetailsModal
         event={selectedEvent}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
+        isOpen={isDetailsOpen}
+        onClose={handleCloseDetails}
+        onEdit={handleOpenEditor}
+      />
+
+      {/* Unified Create/Edit Bottom Sheet & Modal Editor */}
+      <EventEditor
+        isOpen={isEditorOpen}
+        onClose={handleCloseEditor}
+        event={editingEvent}
+        categories={categories}
+        onRefresh={refreshCalendarData}
       />
     </div>
   )

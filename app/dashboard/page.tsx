@@ -33,6 +33,7 @@ export default async function DashboardPage() {
           orderBy: { createdAt: "desc" },
         },
         events: {
+          include: { calendar: true },
           orderBy: { startTime: "asc" },
         },
         memories: {
@@ -50,6 +51,7 @@ export default async function DashboardPage() {
             orderBy: { createdAt: "desc" },
           },
           events: {
+            include: { calendar: true },
             orderBy: { startTime: "asc" },
           },
           memories: {
@@ -61,18 +63,43 @@ export default async function DashboardPage() {
     }
 
     if (dbUser) {
-      tasks = dbUser.tasks.map((t: { id: string; title: string; content: string | null; completed: boolean; dueDate: Date | null; userId: string; createdAt: Date; updatedAt: Date }) => ({
+      tasks = dbUser.tasks.map((t: any) => ({
         ...t,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
         dueDate: t.dueDate ? t.dueDate.toISOString() : null,
       }))
-      events = dbUser.events.map((e: { id: string; title: string; description: string | null; startTime: Date; endTime: Date; location: string | null; userId: string; createdAt: Date; updatedAt: Date }) => ({
-        ...e,
-        startTime: e.startTime.toISOString(),
-        endTime: e.endTime.toISOString(),
-      }))
-      memories = dbUser.memories.map((m: { id: string; content: string; category: string; tags: string[]; userId: string; createdAt: Date }) => ({
+      
+      events = dbUser.events.map((e: any) => {
+        const catType = e.calendar?.categoryType || ""
+        let cognitiveLoad = 35
+        if (catType === "exam-evaluation") cognitiveLoad = 80
+        else if (catType === "deep-work") cognitiveLoad = 75
+        else if (catType === "workout-health") cognitiveLoad = -15
+        else if (catType === "rest") cognitiveLoad = -30
+        else if (catType === "leisure-social") cognitiveLoad = -10
+
+        const isFocusMode = catType === "deep-work" || e.title.toLowerCase().includes("focus")
+
+        return {
+          id: e.id,
+          title: e.title,
+          description: e.description,
+          startTime: e.startTime.toISOString(),
+          endTime: e.endTime.toISOString(),
+          location: e.location,
+          googleEventId: e.googleEventId,
+          calendarId: e.calendarId,
+          color: e.calendar?.color || "#8083ff",
+          categoryName: e.calendar?.name || "General",
+          categoryType: catType,
+          isFocusMode,
+          cognitiveLoad,
+          tags: e.calendar?.name ? [e.calendar.name.toLowerCase()] : [],
+        }
+      })
+
+      memories = dbUser.memories.map((m: any) => ({
         ...m,
         createdAt: m.createdAt.toISOString(),
       }))
@@ -87,9 +114,25 @@ export default async function DashboardPage() {
   if (tasks.length === 0) {
     tasks = mockTasks
   }
+  
   if (events.length === 0) {
-    events = mockEvents
+    events = mockEvents.map((event) => {
+      const isFocus = event.title.toLowerCase().includes("focus") || event.title.toLowerCase().includes("deep work")
+      return {
+        ...event,
+        startTime: new Date(event.startTime).toISOString(),
+        endTime: new Date(event.endTime).toISOString(),
+        calendarId: isFocus ? "mock-cat-1" : "mock-cat-2",
+        color: isFocus ? "#8083ff" : "#c0c1ff",
+        categoryName: isFocus ? "Deep Work" : "Jadwal Kelas",
+        categoryType: isFocus ? "deep-work" : "class-schedule",
+        isFocusMode: isFocus,
+        cognitiveLoad: isFocus ? 75 : 35,
+        tags: isFocus ? ["deep-work"] : ["class-schedule"],
+      }
+    })
   }
+
   if (memories.length === 0) {
     memories = mockMemories
   }
@@ -111,12 +154,36 @@ export default async function DashboardPage() {
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
   // Calculate dynamic cognitive load index
-  // Formula: (Incomplete Tasks * 15%) + (Events Today * 10%), capped at 100%
   const incompleteCount = tasks.filter((t) => !t.completed).length
-  const cognitiveLoad = Math.min(incompleteCount * 15 + events.length * 10, 100)
+  
+  // Filter events scheduled for today
+  const today = new Date()
+  const todayEvents = events.filter((e) => {
+    const eventDate = new Date(e.startTime)
+    return (
+      eventDate.getFullYear() === today.getFullYear() &&
+      eventDate.getMonth() === today.getMonth() &&
+      eventDate.getDate() === today.getDate()
+    )
+  })
+
+  // Compute category-based weights for today's events
+  let calendarLoadSum = 0
+  todayEvents.forEach((e) => {
+    const catType = e.categoryType || ""
+    if (catType === "exam-evaluation") calendarLoadSum += 40      // High stress exam adds load
+    else if (catType === "deep-work") calendarLoadSum += 25        // Intellect intensive adds load
+    else if (catType === "workout-health") calendarLoadSum -= 10   // Workout aids recovery
+    else if (catType === "rest") calendarLoadSum -= 20             // Rest aids recovery
+    else if (catType === "leisure-social") calendarLoadSum -= 5    // Leisure aids recovery
+    else calendarLoadSum += 10                                     // Default schedule impact
+  })
+
+  // Formula: Tasks load + Calendar load, capped at 100%, minimum 0%
+  const cognitiveLoad = Math.max(0, Math.min(incompleteCount * 15 + calendarLoadSum, 100))
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-12 font-sans">
       {/* Header Greeting & Cognitive Load Indicator */}
       <WelcomeHeader name={name} cognitiveLoad={cognitiveLoad} />
 

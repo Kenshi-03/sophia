@@ -21,10 +21,30 @@ export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { 
       return { success: false, error: "User not found" };
     }
 
+    // Find or seed a category for the user
+    let category = await prisma.calendarCategory.findFirst({
+      where: { userId: dbUser.id, categoryType: "deep-work" },
+    });
+
+    if (!category) {
+      const { seedDefaultCategoriesForUser } = await import("@/lib/settings/category-seeding");
+      await seedDefaultCategoriesForUser(dbUser.id);
+      category = await prisma.calendarCategory.findFirst({
+        where: { userId: dbUser.id, categoryType: "deep-work" },
+      });
+    }
+
+    const calendarId = category?.id || event.calendarId;
+
+    if (!calendarId) {
+      return { success: false, error: "Calendar category not found" };
+    }
+
     const newEvent = await prisma.event.create({
       data: {
         id: event.id || undefined,
         userId: dbUser.id,
+        calendarId,
         title: event.title,
         description: event.description || null,
         startTime: new Date(event.startTime),

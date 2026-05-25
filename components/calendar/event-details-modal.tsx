@@ -8,9 +8,10 @@ interface EventDetailsModalProps {
   event: CalendarEvent | null
   isOpen: boolean
   onClose: () => void
+  onEdit: (event: CalendarEvent) => void
 }
 
-export default function EventDetailsModal({ event, isOpen, onClose }: EventDetailsModalProps) {
+export default function EventDetailsModal({ event, isOpen, onClose, onEdit }: EventDetailsModalProps) {
   // Prevent scrolling behind modal when open
   useEffect(() => {
     if (isOpen) {
@@ -46,17 +47,18 @@ export default function EventDetailsModal({ event, isOpen, onClose }: EventDetai
   const { dayStr, timeRange } = formatEventDateTime(event.startTime, event.endTime)
   const isFocus = event.isFocusMode || false
   const load = event.cognitiveLoad || 0
+  const categoryColor = event.color || "#8083ff"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       
       {/* Modal Card wrapper */}
-      <div className="w-full max-w-lg glass-panel rounded-3xl overflow-hidden relative border border-white/10 shadow-2xl bg-[#1e2023]/95 p-6 space-y-6 max-h-[90vh] overflow-y-auto scrollbar-thin animate-in zoom-in-95 duration-200">
+      <div className="w-full max-w-lg glass-panel rounded-3xl overflow-hidden relative border border-white/10 shadow-2xl bg-[#1e2023]/95 p-6 space-y-6 max-h-[90vh] overflow-y-auto scrollbar-thin animate-in zoom-in-95 duration-200 font-sans">
         
         {/* Header Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#c7c4d7]/70 hover:text-white p-1.5 hover:bg-white/5 rounded-xl transition-all"
+          className="absolute top-4 right-4 text-[#c7c4d7]/70 hover:text-white p-1.5 hover:bg-white/5 rounded-xl transition-all cursor-pointer"
         >
           <X size={16} />
         </button>
@@ -64,15 +66,18 @@ export default function EventDetailsModal({ event, isOpen, onClose }: EventDetai
         {/* Event Title Header */}
         <div className="space-y-2 pr-8">
           <div className="flex flex-wrap gap-2 items-center">
-            <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${
-              isFocus 
-                ? "bg-[#c0c1ff]/10 text-[#c0c1ff] border border-[#c0c1ff]/20" 
-                : "bg-white/5 text-[#c7c4d7]/70 border border-white/5"
-            }`}>
-              {isFocus ? "Focus Block" : "Event Agenda"}
+            <span
+              className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border"
+              style={{
+                color: categoryColor,
+                borderColor: `${categoryColor}33`,
+                backgroundColor: `${categoryColor}11`,
+              }}
+            >
+              {event.categoryName || (isFocus ? "Focus Block" : "Event Agenda")}
             </span>
 
-            {load > 0 && (
+            {load !== 0 && (
               <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded flex items-center gap-1 ${
                 load >= 70 
                   ? "bg-[#ffb4ab]/10 text-[#ffb4ab] border border-[#ffb4ab]/20" 
@@ -81,7 +86,7 @@ export default function EventDetailsModal({ event, isOpen, onClose }: EventDetai
                   : "bg-[#4edea3]/10 text-[#4edea3] border border-[#4edea3]/20"
               }`}>
                 <Activity size={10} />
-                <span>Beban Kognitif: {load}%</span>
+                <span>Beban Kognitif: {load > 0 ? `+${load}%` : `${load}%`}</span>
               </span>
             )}
           </div>
@@ -155,6 +160,10 @@ export default function EventDetailsModal({ event, isOpen, onClose }: EventDetai
               <>
                 Agenda ini memiliki <strong>Beban Kognitif Tinggi ({load}%)</strong>. Disarankan untuk tidak menjadwalkan agenda berat lain tepat setelah sesi ini berakhir. Alokasikan waktu istirahat minimal 15 menit untuk memulihkan energi kognitif.
               </>
+            ) : load < 0 ? (
+              <>
+                Agenda ini difokuskan untuk <strong>Pemulihan (Recovery) Kognitif</strong>. Sesi ini sangat penting untuk mencegah kelelahan mental (burnout) dan mengembalikan kestabilan produktivitas Anda.
+              </>
             ) : (
               <>
                 Slot waktu ini optimal untuk koordinasi eksternal atau integrasi informasi ringan. Beban kognitif stabil dan mendukung interaksi interpersonal yang fokus.
@@ -163,13 +172,25 @@ export default function EventDetailsModal({ event, isOpen, onClose }: EventDetai
           </p>
         </div>
 
-        {/* Action Button */}
-        <button
-          onClick={onClose}
-          className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold border border-white/5 hover:border-white/10 transition-all active:scale-98"
-        >
-          Tutup Rincian
-        </button>
+        {/* Action Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              onClose()
+              onEdit(event)
+            }}
+            className="flex-1 py-2.5 bg-[#8083ff] hover:bg-[#8083ff]/90 text-white rounded-xl text-xs font-semibold hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 cursor-pointer"
+          >
+            Ubah Agenda
+          </button>
+          
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold border border-white/5 hover:border-white/10 transition-all active:scale-95 cursor-pointer"
+          >
+            Tutup Rincian
+          </button>
+        </div>
 
       </div>
     </div>
