@@ -8,12 +8,10 @@ import { createGoogleEvent } from "@/lib/google/calendar/create-event";
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const email = session?.user?.email || "user@sophia.local";
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
     });
 
     if (!user) {
@@ -78,12 +76,10 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const email = session?.user?.email || "user@sophia.local";
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
       include: {
         accounts: {
           where: { provider: "google" },

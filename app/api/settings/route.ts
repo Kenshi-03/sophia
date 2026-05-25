@@ -10,12 +10,10 @@ import { getSettings, updateSettings } from "@/lib/settings/settings"
 export async function GET() {
   try {
     const session = await auth()
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const email = session?.user?.email || "user@sophia.local"
 
     const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
     })
 
     if (!dbUser) {
@@ -40,12 +38,10 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth()
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    const email = session?.user?.email || "user@sophia.local"
 
     const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
     })
 
     if (!dbUser) {
