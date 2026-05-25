@@ -20,6 +20,7 @@ model User {
   memories      MemoryNode[]
   tasks         Task[]
   events        Event[]
+  settings      UserSettings?
 
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -101,4 +102,25 @@ model Event {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model UserSettings {
+  id                     String   @id @default(cuid())
+
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  theme                  String   @default("dark")
+
+  aiModel                String   @default("maia/gemini-2.5-flash")
+  aiMode                 String   @default("productivity")
+
+  memoryDepth            Int      @default(10)
+
+  productivityIntensity  String   @default("balanced")
+
+  localAIEnabled         Boolean  @default(false)
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }

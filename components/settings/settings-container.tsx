@@ -1,19 +1,36 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Sliders, Key, Palette, ShieldAlert } from "lucide-react"
 import GeneralSettings from "./general-settings"
 import GoogleSyncSettings from "./google-sync-settings"
 import ThemeSettings from "./theme-settings"
 import SystemStatus from "./system-status"
+import { useSettingsStore } from "@/stores/use-settings-store"
 
 interface SettingsContainerProps {
   hasCredentials: boolean
   memoryNodesCount: number
+  initialSettings: any
 }
 
-export default function SettingsContainer({ hasCredentials, memoryNodesCount }: SettingsContainerProps) {
+export default function SettingsContainer({ hasCredentials, memoryNodesCount, initialSettings }: SettingsContainerProps) {
   const [activeTab, setActiveTab] = useState<"general" | "sync" | "theme" | "status">("general")
+  const settingsStore = useSettingsStore()
+
+  useEffect(() => {
+    if (initialSettings) {
+      settingsStore.hydrateStore({
+        theme: initialSettings.theme,
+        aiModel: initialSettings.aiModel,
+        defaultAiModel: initialSettings.aiModel,
+        aiMode: initialSettings.aiMode,
+        memoryDepth: initialSettings.memoryDepth,
+        productivityIntensity: initialSettings.productivityIntensity,
+        localAIEnabled: initialSettings.localAIEnabled,
+      })
+    }
+  }, [initialSettings])
 
   const tabs = [
     { id: "general" as const, name: "General Config", icon: Sliders },

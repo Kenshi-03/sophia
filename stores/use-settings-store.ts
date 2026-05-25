@@ -1,46 +1,62 @@
 import { create } from "zustand"
-import { persist } from "zustand/middleware"
 import { AI_MODELS } from "@/lib/ai/config/models"
 
 interface SettingsState {
   userName: string
-  defaultAiModel: string
+  defaultAiModel: string // Alias ke aiModel untuk kompatibilitas kode
+  aiModel: string
   aiMode: "focus" | "creative" | "balanced"
+  memoryDepth: number
+  productivityIntensity: string
+  localAIEnabled: boolean
   cognitiveThreshold: number
   themeAccent: "lavender" | "mint" | "blue"
   autoSyncCalendar: boolean
   autoDndFocus: boolean
+  theme: string
+  
   setUserName: (name: string) => void
   setDefaultAiModel: (model: string) => void
+  setAiModel: (model: string) => void
   setAiMode: (mode: "focus" | "creative" | "balanced") => void
+  setMemoryDepth: (depth: number) => void
+  setProductivityIntensity: (intensity: string) => void
+  setLocalAIEnabled: (enabled: boolean) => void
   setCognitiveThreshold: (threshold: number) => void
   setThemeAccent: (accent: "lavender" | "mint" | "blue") => void
   setAutoSyncCalendar: (val: boolean) => void
   setAutoDndFocus: (val: boolean) => void
+  setTheme: (theme: string) => void
+  hydrateStore: (settings: Partial<SettingsState>) => void
 }
 
-export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set) => ({
-      userName: "Sophia Dev",
-      defaultAiModel: AI_MODELS.FAST,
-      aiMode: "balanced",
-      cognitiveThreshold: 75,
-      themeAccent: "lavender",
-      autoSyncCalendar: true,
-      autoDndFocus: true,
-      setUserName: (userName) => set({ userName }),
-      setDefaultAiModel: (defaultAiModel) => set({ defaultAiModel }),
-      setAiMode: (aiMode) => set({ aiMode }),
-      setCognitiveThreshold: (cognitiveThreshold) => set({ cognitiveThreshold }),
-      setThemeAccent: (themeAccent) => set({ themeAccent }),
-      setAutoSyncCalendar: (autoSyncCalendar) => set({ autoSyncCalendar }),
-      setAutoDndFocus: (autoDndFocus) => set({ autoDndFocus }),
-    }),
-    {
-      name: "sophia-settings-v1", // key in localStorage
-    }
-  )
-)
+export const useSettingsStore = create<SettingsState>()((set) => ({
+  userName: "Sophia Dev",
+  defaultAiModel: AI_MODELS.FAST,
+  aiModel: AI_MODELS.FAST,
+  aiMode: "balanced",
+  memoryDepth: 10,
+  productivityIntensity: "balanced",
+  localAIEnabled: false,
+  cognitiveThreshold: 75,
+  themeAccent: "lavender",
+  autoSyncCalendar: true,
+  autoDndFocus: true,
+  theme: "dark",
+
+  setUserName: (userName) => set({ userName }),
+  setDefaultAiModel: (defaultAiModel) => set({ defaultAiModel, aiModel: defaultAiModel }),
+  setAiModel: (aiModel) => set({ aiModel, defaultAiModel: aiModel }),
+  setAiMode: (aiMode) => set({ aiMode }),
+  setMemoryDepth: (memoryDepth) => set({ memoryDepth }),
+  setProductivityIntensity: (productivityIntensity) => set({ productivityIntensity }),
+  setLocalAIEnabled: (localAIEnabled) => set({ localAIEnabled }),
+  setCognitiveThreshold: (cognitiveThreshold) => set({ cognitiveThreshold }),
+  setThemeAccent: (themeAccent) => set({ themeAccent }),
+  setAutoSyncCalendar: (autoSyncCalendar) => set({ autoSyncCalendar }),
+  setAutoDndFocus: (autoDndFocus) => set({ autoDndFocus }),
+  setTheme: (theme) => set({ theme }),
+  hydrateStore: (settings) => set((state) => ({ ...state, ...settings })),
+}))
 
 export default useSettingsStore
