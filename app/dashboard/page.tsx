@@ -7,12 +7,7 @@ import {
   mockMemories,
   mockAgents,
 } from "@/lib/db/mocks"
-import WelcomeHeader from "@/components/dashboard/welcome-header"
-import CognitiveBriefingCard from "@/components/dashboard/cognitive-briefing-card"
-import CurrentFocusCard from "@/components/dashboard/current-focus-card"
-import ActiveAgentsWidget from "@/components/dashboard/active-agents-widget"
-import IntegratedScheduleWidget from "@/components/dashboard/integrated-schedule-widget"
-import RecentThoughtsWidget from "@/components/dashboard/recent-thoughts-widget"
+import DashboardGrid from "@/components/dashboard/dashboard-grid"
 import { DashboardTask } from "@/types/dashboard"
 import { CalendarEvent } from "@/types/calendar"
 import { MemoryNode } from "@/types/memory"
@@ -184,27 +179,14 @@ export default async function DashboardPage() {
   const cognitiveLoad = Math.max(0, Math.min(incompleteCount * 15 + calendarLoadSum, 100))
 
   return (
-    <div className="space-y-8 pb-12 font-sans">
-      {/* Header Greeting & Cognitive Load Indicator */}
-      <WelcomeHeader name={name} cognitiveLoad={cognitiveLoad} />
-
-      {/* Cognitive Intelligence Briefing Module */}
-      <CognitiveBriefingCard />
-
-      {/* Main Bento Grid Layout */}
-      <div className="grid grid-cols-12 gap-6">
-        {/* Module A: Current Focus Card (Col span: 8) */}
-        <CurrentFocusCard task={activeFocusTask} progressPercent={progressPercent} />
-
-        {/* Module B: System Status / Active Agents (Col span: 4) */}
-        <ActiveAgentsWidget agents={mockAgents} />
-
-        {/* Module C: Integrated Schedule (Col span: 5) */}
-        <IntegratedScheduleWidget events={events} />
-
-        {/* Module D: Recent Thoughts / Notes Grid (Col span: 7) */}
-        <RecentThoughtsWidget memories={memories} />
-      </div>
-    </div>
+    <DashboardGrid
+      name={name}
+      cognitiveLoad={cognitiveLoad}
+      activeFocusTask={activeFocusTask}
+      progressPercent={progressPercent}
+      mockAgents={mockAgents}
+      events={events}
+      memories={memories}
+    />
   )
 }

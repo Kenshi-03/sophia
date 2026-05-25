@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth/auth"
 import { prisma } from "@/lib/db/prisma"
 import { buildCognitiveContext } from "@/lib/ai/context/cognitive-builder"
 import { generateGatewayResponse } from "@/lib/ai/gateway/maia_gateway"
+import { generateSmartRecommendations } from "@/lib/ai/recommendation/recommendation-engine"
 
 export async function GET(request: Request) {
   try {
@@ -25,6 +26,9 @@ export async function GET(request: Request) {
 
     // 2. Build cognitive context metadata
     const context = await buildCognitiveContext(user.id)
+
+    // 3. Generate smart energy/focus recommendations
+    const recommendations = await generateSmartRecommendations(context)
 
     // 3. Format structured payload for MAIA router
     const eventsSummary = context.events.length > 0
@@ -113,8 +117,12 @@ Selalu kembalikan respons hanya berupa format JSON murni tanpa markdown wrapper 
 
     return NextResponse.json({
       success: true,
-      metrics: context.metrics,
+      metrics: {
+        ...context.metrics,
+        cognitiveThreshold: context.userPreferences.cognitiveThreshold,
+      },
       aiBriefing,
+      recommendations,
     })
 
   } catch (error: any) {

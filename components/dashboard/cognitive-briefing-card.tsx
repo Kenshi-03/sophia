@@ -19,9 +19,46 @@ interface AIBriefing {
   recommendations: string[]
 }
 
-export default function CognitiveBriefingCard() {
+export interface RecommendationItem {
+  id: string
+  priority: "subtle" | "moderate" | "high"
+  text: string
+}
+
+export interface RecommendationResult {
+  schedulingSuggestions: RecommendationItem[]
+  recoverySuggestions: RecommendationItem[]
+  focusOptimizations: RecommendationItem[]
+}
+
+const getPriorityStyle = (priority: "subtle" | "moderate" | "high") => {
+  switch (priority) {
+    case "high":
+      return {
+        bg: "bg-red-500/[0.04] border-red-500/20 hover:border-red-500/30",
+        text: "text-[#ffb4ab]",
+        badgeBg: "bg-red-500/15 border-red-500/25 text-[#ffb4ab]",
+      }
+    case "moderate":
+      return {
+        bg: "bg-[#adc6ff]/5 border-[#adc6ff]/20 hover:border-[#adc6ff]/30",
+        text: "text-[#adc6ff]",
+        badgeBg: "bg-[#adc6ff]/15 border-[#adc6ff]/25 text-[#adc6ff]",
+      }
+    case "subtle":
+    default:
+      return {
+        bg: "bg-[#4edea3]/5 border-[#4edea3]/20 hover:border-[#4edea3]/30",
+        text: "text-[#4edea3]",
+        badgeBg: "bg-[#4edea3]/15 border-[#4edea3]/25 text-[#4edea3]",
+      }
+  }
+}
+
+export default function CognitiveBriefingCard({ onMetricsLoad }: { onMetricsLoad?: (metrics: any) => void }) {
   const [metrics, setMetrics] = useState<CognitiveMetrics | null>(null)
   const [briefing, setBriefing] = useState<AIBriefing | null>(null)
+  const [recommendations, setRecommendations] = useState<RecommendationResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showDetails, setShowDetails] = useState(false)
@@ -38,6 +75,10 @@ export default function CognitiveBriefingCard() {
       if (data.success) {
         setMetrics(data.metrics)
         setBriefing(data.aiBriefing)
+        setRecommendations(data.recommendations)
+        if (onMetricsLoad) {
+          onMetricsLoad(data.metrics)
+        }
       } else {
         throw new Error(data.error || "Gagal memproses data.")
       }
@@ -206,36 +247,12 @@ export default function CognitiveBriefingCard() {
               </p>
             </div>
 
-            {/* Recommendations stack */}
-            <div className="space-y-2.5">
-              <h4 className="text-[9px] uppercase font-bold tracking-wider text-[#c7c4d7]/50 flex items-center gap-1">
-                <Sparkles size={10} className="text-[#c0c1ff]" />
-                <span>Rekomendasi Penjadwalan AI</span>
-              </h4>
-              
-              <div className="grid grid-cols-1 gap-2">
-                {briefing.recommendations.map((rec, index) => (
-                  <div
-                    key={index}
-                    className="flex gap-2.5 p-3 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.02] transition-all items-start"
-                  >
-                    <span className="h-4.5 w-4.5 rounded-lg bg-[#c0c1ff]/10 border border-[#c0c1ff]/20 flex items-center justify-center text-[#c0c1ff] shrink-0 mt-0.5">
-                      <Heart size={10} />
-                    </span>
-                    <p className="text-xs text-[#c7c4d7]/90 leading-relaxed">
-                      {rec}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
           </div>
         </div>
 
         {/* Collapsible Details Sub-panel */}
         {showDetails && (
-          <div className="border-t border-white/5 pt-5 space-y-5 animate-in slide-in-from-top-4 duration-200">
+          <div className="border-t border-white/5 pt-5 space-y-6 animate-in slide-in-from-top-4 duration-200">
             
             {/* Detailed Metrics Cards Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -328,6 +345,87 @@ export default function CognitiveBriefingCard() {
                       <span>{w}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Adaptive Smart Recommendations Section */}
+            {recommendations && (
+              <div className="border-t border-white/5 pt-5 space-y-3.5">
+                <h4 className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/50 flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-[#c0c1ff]" />
+                  <span>Rekomendasi Tindakan Adaptif</span>
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Scheduling Suggestions */}
+                  <div className="p-4 border border-white/5 bg-white/[0.01] rounded-2xl space-y-3">
+                    <h5 className="text-[10px] uppercase font-bold tracking-wider text-[#adc6ff] flex items-center gap-1.5 font-display">
+                      <Activity size={12} className="text-[#adc6ff]" />
+                      <span>Penjadwalan Pintar</span>
+                    </h5>
+                    <div className="space-y-2">
+                      {recommendations.schedulingSuggestions.map((item) => {
+                        const style = getPriorityStyle(item.priority)
+                        return (
+                          <div key={item.id} className={`p-3 rounded-xl border ${style.bg} space-y-1.5 transition-all hover:bg-white/[0.02]`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[8px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded ${style.badgeBg} font-mono`}>
+                                {item.priority}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#c7c4d7]/90 leading-relaxed font-sans">{item.text}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Recovery Suggestions */}
+                  <div className="p-4 border border-white/5 bg-white/[0.01] rounded-2xl space-y-3">
+                    <h5 className="text-[10px] uppercase font-bold tracking-wider text-[#4edea3] flex items-center gap-1.5 font-display">
+                      <Heart size={12} className="text-[#4edea3]" />
+                      <span>Pemulihan & Energi</span>
+                    </h5>
+                    <div className="space-y-2">
+                      {recommendations.recoverySuggestions.map((item) => {
+                        const style = getPriorityStyle(item.priority)
+                        return (
+                          <div key={item.id} className={`p-3 rounded-xl border ${style.bg} space-y-1.5 transition-all hover:bg-white/[0.02]`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[8px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded ${style.badgeBg} font-mono`}>
+                                {item.priority}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#c7c4d7]/90 leading-relaxed font-sans">{item.text}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Focus Optimizations */}
+                  <div className="p-4 border border-white/5 bg-white/[0.01] rounded-2xl space-y-3">
+                    <h5 className="text-[10px] uppercase font-bold tracking-wider text-[#c0c1ff] flex items-center gap-1.5 font-display">
+                      <Brain size={12} className="text-[#c0c1ff]" />
+                      <span>Optimasi Fokus</span>
+                    </h5>
+                    <div className="space-y-2">
+                      {recommendations.focusOptimizations.map((item) => {
+                        const style = getPriorityStyle(item.priority)
+                        return (
+                          <div key={item.id} className={`p-3 rounded-xl border ${style.bg} space-y-1.5 transition-all hover:bg-white/[0.02]`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[8px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded ${style.badgeBg} font-mono`}>
+                                {item.priority}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#c7c4d7]/90 leading-relaxed font-sans">{item.text}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
