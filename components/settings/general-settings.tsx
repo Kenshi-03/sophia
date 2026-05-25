@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { useSettingsStore } from "@/stores/use-settings-store"
-import { Sliders, CheckCircle, Loader2, Sparkles } from "lucide-react"
+import { Sliders, CheckCircle, Loader2, Sparkles, RefreshCw, Cpu, Activity } from "lucide-react"
 
 export default function GeneralSettings() {
   const settings = useSettingsStore()
@@ -11,11 +11,40 @@ export default function GeneralSettings() {
   // Local state for forms
   const [name, setName] = useState("")
   const [model, setModel] = useState("")
+  const [aiMode, setAiMode] = useState<"focus" | "creative" | "balanced">("balanced")
   const [threshold, setThreshold] = useState(75)
   const [dnd, setDnd] = useState(true)
   
   const [isSaving, setIsSaving] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+
+  // Gateway health states
+  const [healthStatus, setHealthStatus] = useState<"loading" | "healthy" | "unhealthy" | "missing_key">("loading")
+  const [healthLatency, setHealthLatency] = useState<number | null>(null)
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false)
+
+  const checkGatewayHealth = async () => {
+    setIsCheckingHealth(true)
+    try {
+      const response = await fetch("/api/ai/health")
+      const data = await response.json()
+      if (data.healthy) {
+        setHealthStatus("healthy")
+        setHealthLatency(data.latency)
+      } else if (data.status === "Missing API Key") {
+        setHealthStatus("missing_key")
+        setHealthLatency(null)
+      } else {
+        setHealthStatus("unhealthy")
+        setHealthLatency(null)
+      }
+    } catch (err) {
+      setHealthStatus("unhealthy")
+      setHealthLatency(null)
+    } finally {
+      setIsCheckingHealth(false)
+    }
+  }
 
   // Prevent hydration warnings
   useEffect(() => {
@@ -23,10 +52,18 @@ export default function GeneralSettings() {
     if (settings) {
       setName(settings.userName)
       setModel(settings.defaultAiModel)
+      setAiMode(settings.aiMode || "balanced")
       setThreshold(settings.cognitiveThreshold)
       setDnd(settings.autoDndFocus)
     }
   }, [settings])
+
+  // Run health check on mount
+  useEffect(() => {
+    if (mounted) {
+      checkGatewayHealth()
+    }
+  }, [mounted])
 
   if (!mounted) {
     return (
@@ -46,6 +83,7 @@ export default function GeneralSettings() {
 
     settings.setUserName(name)
     settings.setDefaultAiModel(model)
+    settings.setAiMode(aiMode)
     settings.setCognitiveThreshold(threshold)
     settings.setAutoDndFocus(dnd)
 
@@ -81,20 +119,102 @@ export default function GeneralSettings() {
           />
         </div>
 
-        {/* AI Model selection */}
-        <div className="space-y-2">
-          <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">
-            Default AI Model
-          </label>
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="w-full px-3 py-2 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20"
-          >
-            <option value="Gemini 2.0 Flash">Gemini 2.0 Flash (Recommended)</option>
-            <option value="Gemini 1.5 Pro">Gemini 1.5 Pro</option>
-            <option value="Gemini 1.5 Flash">Gemini 1.5 Flash</option>
-          </select>
+        {/* AI Configurations (Grid) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* AI Model selection */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">
+              Default AI Model
+            </label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full px-3 py-2 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20"
+            >
+              <option value="maia/gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
+              <option value="maia/llama-3.1-8b">Llama 3.1 8B</option>
+              <option value="maia/groq-llama">Groq Llama</option>
+            </select>
+          </div>
+
+          {/* AI Mode selection */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">
+              AI Productivity Mode
+            </label>
+            <select
+              value={aiMode}
+              onChange={(e) => setAiMode(e.target.value as any)}
+              className="w-full px-3 py-2 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20"
+            >
+              <option value="balanced">General / Balanced (temp: 0.7)</option>
+              <option value="focus">Focus (temp: 0.2)</option>
+              <option value="creative">Idea / Creative (temp: 0.9)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* MAIA Gateway Config & Health Monitoring */}
+        <div className="p-4 border border-white/5 bg-white/[0.01] rounded-2xl space-y-3">
+          <div className="flex justify-between items-start">
+            <div className="space-y-0.5">
+              <h4 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <Cpu size={12} className="text-[#c0c1ff]" />
+                <span>MAIA Central AI Gateway</span>
+              </h4>
+              <p className="text-[10px] text-[#c7c4d7]/50 font-mono">https://api.maiarouter.ai/v1</p>
+            </div>
+            
+            <button
+              type="button"
+              onClick={checkGatewayHealth}
+              disabled={isCheckingHealth}
+              className="inline-flex items-center gap-1 px-2.5 py-1 border border-white/10 hover:border-[#c0c1ff]/30 rounded-lg text-[9px] font-bold text-[#c7c4d7] hover:text-white transition-all duration-200 cursor-pointer disabled:opacity-50"
+            >
+              {isCheckingHealth ? (
+                <Loader2 className="animate-spin" size={10} />
+              ) : (
+                <RefreshCw size={10} />
+              )}
+              <span>Check Health</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-4 items-center justify-between pt-2 border-t border-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[#c7c4d7]/50">Status:</span>
+              {healthStatus === "loading" && (
+                <span className="text-[10px] text-amber-400/80 flex items-center gap-1">
+                  <Loader2 className="animate-spin" size={10} /> Verifying...
+                </span>
+              )}
+              {healthStatus === "healthy" && (
+                <span className="text-[10px] text-[#4edea3] font-bold bg-[#4edea3]/10 px-2 py-0.5 rounded border border-[#4edea3]/20">
+                  Healthy
+                </span>
+              )}
+              {healthStatus === "unhealthy" && (
+                <span className="text-[10px] text-[#ffb4ab] font-bold bg-[#ffb4ab]/10 px-2 py-0.5 rounded border border-[#ffb4ab]/20">
+                  Unhealthy
+                </span>
+              )}
+              {healthStatus === "missing_key" && (
+                <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                  Missing API Key
+                </span>
+              )}
+            </div>
+
+            {healthStatus === "healthy" && healthLatency !== null && (
+              <div className="text-[10px] font-mono text-[#c7c4d7]/70">
+                Latency: <span className="text-[#4edea3] font-bold">{healthLatency}ms</span>
+              </div>
+            )}
+            
+            <div className="text-[10px] font-mono text-[#c7c4d7]/60">
+              Active: <span className="text-[#c0c1ff] font-bold">{model}</span>
+            </div>
+          </div>
         </div>
 
         {/* Cognitive Threshold Slider */}
@@ -119,7 +239,7 @@ export default function GeneralSettings() {
             </span>
           </div>
           <p className="text-[10px] text-[#c7c4d7]/50 leading-normal">
-            Sistem akan menampilkan visual kemerahan (load warning) apabila total beban kognitif Anda melebih batas di atas.
+            Sistem akan menampilkan visual kemerahan (load warning) apabila total beban kognitif Anda melebihi batas di atas.
           </p>
         </div>
 
@@ -145,7 +265,7 @@ export default function GeneralSettings() {
         {/* Action button & Success feedback */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-end gap-3">
           {showSuccess && (
-            <span className="text-xs text-[#4edea3] flex items-center gap-1 font-semibold">
+            <span className="text-xs text-[#4edea3] flex items-center gap-1 font-semibold animate-fade-in">
               <CheckCircle size={14} />
               <span>Pengaturan berhasil disimpan!</span>
             </span>
@@ -154,7 +274,7 @@ export default function GeneralSettings() {
           <button
             type="submit"
             disabled={isSaving}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#8083ff] text-white rounded-xl text-xs font-semibold hover:bg-[#8083ff]/90 hover:shadow-lg hover:shadow-[#8083ff]/10 transition-all duration-200 active:scale-95 disabled:opacity-50 cursor-pointer"
           >
             {isSaving && <Loader2 size={12} className="animate-spin" />}
             <span>Simpan Perubahan</span>

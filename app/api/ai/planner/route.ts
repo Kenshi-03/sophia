@@ -5,7 +5,11 @@ import { CalendarEvent } from '@/types/calendar';
 
 export async function POST(request: Request) {
   try {
-    const { events = [] } = await request.json() as { events: CalendarEvent[] };
+    const { events = [], model, aiMode } = await request.json() as { 
+      events: CalendarEvent[]; 
+      model?: string;
+      aiMode?: any;
+    };
     
     // Format events list for LLM consumption
     const eventsDescription = events.length > 0 
@@ -26,6 +30,8 @@ export async function POST(request: Request) {
 
     const gatewayResponse = await generateGatewayResponse(prompt, {
       systemInstruction: PLANNER_PROMPT,
+      model,
+      aiMode: aiMode || 'focus', // Default to focus mode for highly logical planning tasks
     });
 
     // Try to parse JSON from the response text

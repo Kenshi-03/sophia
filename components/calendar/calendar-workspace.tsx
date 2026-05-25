@@ -8,6 +8,7 @@ import SyncStatusPanel from "./sync-status-panel"
 import EventDetailsModal from "./event-details-modal"
 import { CalendarEvent } from "@/types/calendar"
 import { saveFocusBlockAction } from "@/app/actions/schedule"
+import { useSettingsStore } from "@/stores/use-settings-store"
 
 interface CalendarWorkspaceProps {
   initialEvents: CalendarEvent[]
@@ -15,6 +16,7 @@ interface CalendarWorkspaceProps {
 }
 
 export default function CalendarWorkspace({ initialEvents, hasCredentials }: CalendarWorkspaceProps) {
+  const settings = useSettingsStore()
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -38,7 +40,11 @@ export default function CalendarWorkspace({ initialEvents, hasCredentials }: Cal
       const res = await fetch("/api/ai/planner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: currentEvents }),
+        body: JSON.stringify({ 
+          events: currentEvents,
+          model: settings.defaultAiModel,
+          aiMode: settings.aiMode,
+        }),
       })
       if (res.ok) {
         const data = await res.json()

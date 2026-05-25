@@ -6,7 +6,7 @@ import { retrieveRelevantMemories } from '@/lib/ai/memory/retrieve-memory';
 
 export async function POST(request: Request) {
   try {
-    const { query, userId = 'default-user-id' } = await request.json();
+    const { query, userId = 'default-user-id', model, aiMode } = await request.json();
     if (!query) {
       return NextResponse.json({ error: 'Query is required.' }, { status: 400 });
     }
@@ -20,8 +20,8 @@ export async function POST(request: Request) {
     // Assemble LLM context payload
     const context = assembleAgentContext(query, relevantMemories, []);
 
-    // Generate output utilizing Gemini client
-    const response = await generateAiResponse(query, context);
+    // Generate output utilizing MAIA gateway and passing model/mode parameters
+    const response = await generateAiResponse(query, context, { model, aiMode });
 
     return NextResponse.json({
       query,

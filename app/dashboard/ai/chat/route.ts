@@ -2,9 +2,12 @@ import { generateGatewayResponse } from "@/lib/ai/gateway/maia_gateway"
 
 export async function POST(req: Request) {
   try {
-    const { query } = await req.json()
+    const { query, model, aiMode } = await req.json()
 
-    const gatewayResponse = await generateGatewayResponse(query)
+    const gatewayResponse = await generateGatewayResponse(query, {
+      model,
+      aiMode,
+    })
 
     return Response.json({
       response: gatewayResponse.text,

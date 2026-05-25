@@ -16,6 +16,7 @@ import {
 import PageHeader from "@/components/shared/page-header"
 import AgentSelector from "@/components/ai/agent-selector"
 import { useAiStore } from "@/stores/use-ai-store"
+import { useSettingsStore } from "@/stores/use-settings-store"
 
 const suggestedPrompts = [
   "Analyze my calendar for today",
@@ -26,6 +27,7 @@ const suggestedPrompts = [
 
 export default function AiCommandCenterPage() {
   const { messages, isGenerating, activeAgent, addMessage, setGenerating, setActiveAgent } = useAiStore()
+  const settings = useSettingsStore()
   const [inputValue, setInputValue] = useState("")
   const [latency, setLatency] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<"chat" | "agents" | "metrics">("chat")
@@ -69,7 +71,7 @@ export default function AiCommandCenterPage() {
     const startTime = Date.now()
 
     try {
-      // 3. Post to backend chat API
+      // 3. Post to backend chat API passing model and aiMode from settings
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: {
@@ -78,6 +80,8 @@ export default function AiCommandCenterPage() {
         body: JSON.stringify({
           query,
           userId: "user@sophia.local", // using seed developer email as user ID
+          model: settings.defaultAiModel,
+          aiMode: settings.aiMode,
         }),
       })
 

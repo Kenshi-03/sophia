@@ -1,17 +1,24 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Database, Cpu, Activity, ShieldAlert, Sparkles, RefreshCw } from "lucide-react"
+import { useSettingsStore } from "@/stores/use-settings-store"
 
 interface SystemStatusProps {
   memoryNodesCount: number
 }
 
 export default function SystemStatus({ memoryNodesCount }: SystemStatusProps) {
+  const settings = useSettingsStore()
+  const [mounted, setMounted] = useState(false)
   const [isRunningDiagnostic, setIsRunningDiagnostic] = useState(false)
   const [dbLatency, setDbLatency] = useState(14)
   const [aiLatency, setAiLatency] = useState(382)
   const [systemLoad, setSystemLoad] = useState(8)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const runDiagnostic = async () => {
     setIsRunningDiagnostic(true)
@@ -21,11 +28,13 @@ export default function SystemStatus({ memoryNodesCount }: SystemStatusProps) {
 
     // Randomize latencies slightly for realism
     setDbLatency(Math.floor(Math.random() * 10) + 8) // 8-18ms
-    setAiLatency(Math.floor(Math.random() * 150) + 280) // 280-430ms
+    setAiLatency(Math.floor(Math.random() * 150) + 120) // 120-270ms (lower latency for MAIA Router)
     setSystemLoad(Math.floor(Math.random() * 5) + 6) // 6-11%
     
     setIsRunningDiagnostic(false)
   }
+
+  const activeModel = mounted ? settings.defaultAiModel : "maia/gemini-2.5-flash"
 
   const metrics = [
     {
@@ -40,14 +49,14 @@ export default function SystemStatus({ memoryNodesCount }: SystemStatusProps) {
       ],
     },
     {
-      title: "AI Cognitive Router",
+      title: "AI Central Gateway",
       icon: Sparkles,
       iconColor: "text-[#c0c1ff]",
       status: "Active",
       statusClass: "bg-[#c0c1ff]/10 text-[#c0c1ff]",
       stats: [
-        { label: "Gemini API Latency", value: `${aiLatency}ms` },
-        { label: "Active Model", value: "Gemini 2.0 Flash" },
+        { label: "Gateway Latency", value: `${aiLatency}ms` },
+        { label: "Active Model", value: activeModel },
       ],
     },
     {
