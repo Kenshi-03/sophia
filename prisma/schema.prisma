@@ -1,31 +1,36 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
 model User {
-  id            String       @id @default(cuid())
-  name          String?
-  email         String?      @unique
-  emailVerified DateTime?
-  image         String?
+  id                   String                 @id @default(cuid())
+  name                 String?
+  email                String?                @unique
+  emailVerified        DateTime?
+  image                String?
 
-  accounts      Account[]
-  sessions      Session[]
-  memories      MemoryNode[]
-  tasks         Task[]
-  events        Event[]
-  settings      UserSettings?
-  categories    CalendarCategory[]
-  aiUsages      AiUsage[]
+  accounts             Account[]
+  sessions             Session[]
+  memories             MemoryNode[]
+  tasks                Task[]
+  events               Event[]
+  settings             UserSettings?
+  categories           CalendarCategory[]
+  aiUsages             AiUsage[]
+  cognitiveProfile     CognitiveProfile?
+  memoryRelations      MemoryRelation[]
+  dailyCognitiveStates DailyCognitiveState[]
 
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 }
 
 model Account {
@@ -66,15 +71,25 @@ model VerificationToken {
 }
 
 model MemoryNode {
-  id        String   @id @default(cuid())
-  content   String
-  category  String
-  tags      String[]
+  id         String   @id @default(cuid())
+  content    String
+  category   String
+  tags       String[]
+  importance Float    @default(1.0)
+  decayRate  Float    @default(0.01)
+  sourceType String?  @default("chat")
+  visibility String   @default("private") // private, ai-only, restricted, shareable
+  taxonomy   String   @default("reflection") // reflection, stress-marker, recovery-event, deep-work-session, insight, planning
+  contentHash String? @default("")
+  reliability Float   @default(1.0)
+  memoryType String   @default("hybrid") // episodic, semantic, hybrid
 
-  userId    String
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
+  embedding  MemoryEmbedding?
+
+  createdAt  DateTime @default(now())
 
   @@index([userId])
 }
@@ -183,5 +198,83 @@ model AiUsage {
   estimatedCost    Float
   createdAt        DateTime @default(now())
 
+  @@index([userId])
+}
+
+model MemoryEmbedding {
+  id               String      @id @default(cuid())
+  memoryNodeId     String      @unique
+  memoryNode       MemoryNode  @relation(fields: [memoryNodeId], references: [id], onDelete: Cascade)
+
+  embedding        Unsupported("vector(768)")
+  embeddingModel   String      @default("text-embedding-004")
+  embeddingVersion String      @default("v1")
+  embeddingStatus  String      @default("completed") // pending, completed, failed
+  lastEmbeddedAt   DateTime    @default(now())
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model MemoryRelation {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sourceType        String   // memory, event, task, category, insight
+  sourceId          String
+  targetType        String   // memory, event, task, category, insight
+  targetId          String
+
+  relationType      String   // dependency, reference, overload, recovery, related
+  relationStrength  Float    @default(0.5)
+  relationConfidence Float   @default(1.0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([sourceId, sourceType])
+  @@index([targetId, targetType])
+}
+
+model CognitiveProfile {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  focusRhythm            Json?
+  overloadTolerance      Float    @default(70.0)
+  recoveryQuality        Float    @default(50.0)
+  productivityConsistency Float    @default(50.0)
+  deepWorkTiming         String?
+  procrastinationIndex   Float    @default(0.0)
+  stressCycles           Json?
+
+  focusTrend             Json?
+  stressTrend            Json?
+  recoveryTrend          Json?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model DailyCognitiveState {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date                  DateTime
+  cognitiveLoad         Float
+  focusMinutes          Int
+  recoveryMinutes       Int
+  burnoutRisk           String
+  contextSwitches       Int
+  focusFragmentation    Float
+  confidenceScore       Float?   @default(1.0)
+
+  createdAt             DateTime @default(now())
+
+  @@unique([userId, date])
   @@index([userId])
 }

@@ -1,23 +1,52 @@
 import prisma from '../prisma';
 import { invalidateUserCache } from '../../redis';
+import { memoryQueue } from '../../queue/client';
+import { computeContentHash } from '../../ai/memory/embedding';
 
 export async function createMemoryNode(data: {
   content: string;
   userId: string;
   category: string;
   tags?: string[];
+  importance?: number;
+  decayRate?: number;
+  sourceType?: string;
+  visibility?: string;
+  taxonomy?: string;
+  reliability?: number;
+  memoryType?: string;
 }) {
   try {
+    const hash = computeContentHash(data.content);
+    
     const node = await prisma.memoryNode.create({
       data: {
         content: data.content,
         userId: data.userId,
         category: data.category,
         tags: data.tags || [],
+        importance: data.importance ?? 1.0,
+        decayRate: data.decayRate ?? 0.01,
+        sourceType: data.sourceType ?? "chat",
+        visibility: data.visibility ?? "private",
+        taxonomy: data.taxonomy ?? "reflection",
+        contentHash: hash,
+        reliability: data.reliability ?? 1.0,
+        memoryType: data.memoryType ?? "hybrid",
       },
     });
+
     // Invalidate user cognitive briefing cache
     await invalidateUserCache(data.userId, 'cognitive');
+
+    // Trigger background embedding generation
+    await memoryQueue.add(
+      `generate-embedding-${node.id}`,
+      { userId: node.userId, memoryId: node.id, action: 'generate-embedding' }
+    ).catch(err => {
+      console.error("Failed to add generate-embedding job to queue:", err);
+    });
+
     return node;
   } catch (error) {
     console.error("Prisma createMemoryNode failed:", error);
@@ -27,6 +56,14 @@ export async function createMemoryNode(data: {
       userId: data.userId,
       category: data.category,
       tags: data.tags || [],
+      importance: data.importance ?? 1.0,
+      decayRate: data.decayRate ?? 0.01,
+      sourceType: data.sourceType ?? "chat",
+      visibility: data.visibility ?? "private",
+      taxonomy: data.taxonomy ?? "reflection",
+      contentHash: computeContentHash(data.content),
+      reliability: data.reliability ?? 1.0,
+      memoryType: data.memoryType ?? "hybrid",
       createdAt: new Date(),
     };
   }
@@ -67,19 +104,49 @@ export async function deleteMemoryNode(id: string) {
 
 export async function updateMemoryNode(
   id: string,
-  data: { content: string; category: string; tags?: string[] }
+  data: {
+    content: string;
+    category: string;
+    tags?: string[];
+    importance?: number;
+    decayRate?: number;
+    sourceType?: string;
+    visibility?: string;
+    taxonomy?: string;
+    reliability?: number;
+    memoryType?: string;
+  }
 ) {
   try {
+    const hash = computeContentHash(data.content);
+    
     const updated = await prisma.memoryNode.update({
       where: { id },
       data: {
         content: data.content,
         category: data.category,
         tags: data.tags || [],
+        importance: data.importance,
+        decayRate: data.decayRate,
+        sourceType: data.sourceType,
+        visibility: data.visibility,
+        taxonomy: data.taxonomy,
+        contentHash: hash,
+        reliability: data.reliability,
+        memoryType: data.memoryType,
       },
     });
+
     if (updated) {
       await invalidateUserCache(updated.userId, 'cognitive');
+
+      // Trigger background embedding regeneration
+      await memoryQueue.add(
+        `generate-embedding-${updated.id}`,
+        { userId: updated.userId, memoryId: updated.id, action: 'generate-embedding' }
+      ).catch(err => {
+        console.error("Failed to add generate-embedding job to queue:", err);
+      });
     }
     return updated;
   } catch (error) {
@@ -93,4 +160,5 @@ export async function updateMemoryNode(
     };
   }
 }
+
 
