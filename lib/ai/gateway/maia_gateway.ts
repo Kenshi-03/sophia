@@ -1,6 +1,8 @@
 import OpenAI from "openai"
 import { AIResponse, CompletionOptions } from "../types"
 import { AI_MODELS, AVAILABLE_MODELS } from "../config/models"
+import { trackAiUsage } from "../cost-tracker"
+import { logger } from "../../logger"
 
 // Initialize OpenAI client pointing to MAIA Router
 const getMaiaClient = (customApiKey?: string | null) => {
@@ -14,6 +16,7 @@ const getMaiaClient = (customApiKey?: string | null) => {
 
 interface CustomCompletionOptions extends CompletionOptions {
   customApiKey?: string | null;
+  userId?: string;
 }
 
 /**
@@ -43,7 +46,7 @@ export async function generateGatewayResponse(
   const selectedModel = isValidModel ? requestedModel : AI_MODELS.FAST
   
   if (!isValidModel) {
-    console.warn(
+    logger.warn(
       `MAIA Gateway: Model identifier "${requestedModel}" tidak valid. Mengalihkan otomatis ke fallback: "${AI_MODELS.FAST}".`
     )
   }
@@ -87,17 +90,30 @@ export async function generateGatewayResponse(
     const text = response.choices[0]?.message?.content || ""
     const latency = Date.now() - startTime
 
+    const promptTokens = response.usage?.prompt_tokens ?? 0
+    const completionTokens = response.usage?.completion_tokens ?? 0
+
+    if (options?.userId && (promptTokens > 0 || completionTokens > 0)) {
+      trackAiUsage(options.userId, selectedModel, {
+        promptTokens,
+        completionTokens,
+      }).catch((err) => {
+        logger.error("Failed to track AI usage during response generation", err)
+      })
+    }
+
     return {
       text,
       provider: "maia",
       model: selectedModel,
       latency,
     }
-  } catch (error: any) {
-    console.error("MAIA Gateway Error Details:", error)
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string }
+    logger.error("MAIA Gateway Error Details", err)
     
     // 4. Improve Error Handling: Clean raw LiteLLM or provider internal errors
-    const rawMessage = error?.message || ""
+    const rawMessage = err?.message || ""
     let cleanMessage = "Sistem gagal memproses instruksi AI. Mohon coba lagi beberapa saat lagi."
     
     if (

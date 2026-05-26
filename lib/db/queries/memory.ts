@@ -1,4 +1,5 @@
 import prisma from '../prisma';
+import { invalidateUserCache } from '../../redis';
 
 export async function createMemoryNode(data: {
   content: string;
@@ -7,7 +8,7 @@ export async function createMemoryNode(data: {
   tags?: string[];
 }) {
   try {
-    return await prisma.memoryNode.create({
+    const node = await prisma.memoryNode.create({
       data: {
         content: data.content,
         userId: data.userId,
@@ -15,6 +16,9 @@ export async function createMemoryNode(data: {
         tags: data.tags || [],
       },
     });
+    // Invalidate user cognitive briefing cache
+    await invalidateUserCache(data.userId, 'cognitive');
+    return node;
   } catch (error) {
     console.error("Prisma createMemoryNode failed:", error);
     return {
@@ -48,9 +52,13 @@ export async function getMemoryNodesByUser(userId: string) {
 
 export async function deleteMemoryNode(id: string) {
   try {
-    return await prisma.memoryNode.delete({
+    const deleted = await prisma.memoryNode.delete({
       where: { id },
     });
+    if (deleted) {
+      await invalidateUserCache(deleted.userId, 'cognitive');
+    }
+    return deleted;
   } catch (error) {
     console.error("Prisma deleteMemoryNode failed:", error);
     return { id };
@@ -62,7 +70,7 @@ export async function updateMemoryNode(
   data: { content: string; category: string; tags?: string[] }
 ) {
   try {
-    return await prisma.memoryNode.update({
+    const updated = await prisma.memoryNode.update({
       where: { id },
       data: {
         content: data.content,
@@ -70,6 +78,10 @@ export async function updateMemoryNode(
         tags: data.tags || [],
       },
     });
+    if (updated) {
+      await invalidateUserCache(updated.userId, 'cognitive');
+    }
+    return updated;
   } catch (error) {
     console.error("Prisma updateMemoryNode failed:", error);
     return {

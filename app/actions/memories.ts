@@ -3,6 +3,7 @@
 import { getCurrentUser } from "@/lib/auth/session"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
+import { invalidateUserCache } from "@/lib/redis"
 
 export async function deleteMemoryAction(memoryId: string) {
   try {
@@ -17,6 +18,8 @@ export async function deleteMemoryAction(memoryId: string) {
         userId: user.id
       }
     })
+
+    await invalidateUserCache(user.id, "cognitive")
 
     revalidatePath("/dashboard/memory")
     return { success: true, memoryId }
@@ -47,6 +50,8 @@ export async function updateMemoryAction(
         tags: data.tags,
       }
     })
+
+    await invalidateUserCache(user.id, "cognitive")
 
     revalidatePath("/dashboard/memory")
     return {

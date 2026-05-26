@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { CalendarEvent } from "@/types/calendar";
 import { revalidatePath } from "next/cache";
+import { invalidateUserCache } from "@/lib/redis";
 
 export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { id?: string }) {
   try {
@@ -43,6 +44,8 @@ export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { 
         location: event.location || null,
       },
     });
+
+    await invalidateUserCache(user.id, "cognitive");
 
     revalidatePath("/dashboard/calendar");
     return { 

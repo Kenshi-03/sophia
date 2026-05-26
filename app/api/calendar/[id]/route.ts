@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { updateGoogleEvent } from "@/lib/google/calendar/update-event";
 import { deleteGoogleEvent } from "@/lib/google/calendar/delete-event";
+import { invalidateUserCache } from "@/lib/redis";
 
 // PATCH: Update an existing event and sync edits to Google Calendar
 export async function PATCH(
@@ -82,6 +83,8 @@ export async function PATCH(
       }
     }
 
+    await invalidateUserCache(dbUser.id, "cognitive");
+
     return NextResponse.json({
       success: true,
       event: {
@@ -152,6 +155,8 @@ export async function DELETE(
     await prisma.event.delete({
       where: { id },
     });
+
+    await invalidateUserCache(dbUser.id, "cognitive");
 
     return NextResponse.json({ success: true });
   } catch (error) {

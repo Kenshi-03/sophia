@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
 import { createGoogleEvent } from "@/lib/google/calendar/create-event";
+import { invalidateUserCache } from "@/lib/redis";
 
 // GET: Fetch all calendar categories and events for the authenticated user
 export async function GET() {
@@ -141,6 +142,9 @@ export async function POST(request: Request) {
         // We proceed as local creation succeeded
       }
     }
+
+    // Invalidate user cognitive briefing cache
+    await invalidateUserCache(dbUser.id, "cognitive");
 
     return NextResponse.json({
       success: true,

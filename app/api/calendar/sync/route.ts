@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { syncUserCalendar } from "@/lib/google/calendar/sync";
 import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
+import { calendarSyncQueue } from "@/lib/queue/client";
 
 export async function POST() {
   try {
@@ -38,14 +38,38 @@ export async function POST() {
       });
     }
 
-    // Call the robust bidirectional sync service
-    await syncUserCalendar(dbUser.id);
+    // Schedule the robust bidirectional sync service in background with idempotency jobId
+    try {
+      await calendarSyncQueue.add(
+        "sync",
+        { userId: dbUser.id },
+        { jobId: `sync:${dbUser.id}` }
+      );
 
-    return NextResponse.json({
-      success: true,
-      mode: "cloud",
-      message: "Successfully synchronized with Google Calendar.",
-    });
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "cloud",
+          message: "Google Calendar synchronization scheduled in background.",
+        },
+        { status: 202 }
+      );
+    } catch (queueErr) {
+      console.warn("Failed to enqueue sync. Falling back to synchronous execution due to queue infrastructure issue:", queueErr);
+      
+      // Fallback: Run sync synchronously
+      const { syncUserCalendar } = await import("@/lib/google/calendar/sync");
+      await syncUserCalendar(dbUser.id);
+      
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "cloud-fallback",
+          message: "Google Calendar synchronization processed synchronously (background queue unavailable).",
+        },
+        { status: 200 }
+      );
+    }
   } catch (error: any) {
     console.error("Calendar sync endpoint error:", error);
     
@@ -55,7 +79,7 @@ export async function POST() {
     
     return NextResponse.json(
       { 
-        error: "Synchronization failed", 
+        error: "Synchronization scheduling failed", 
         details: msg,
         isOAuthError: isPermissionError
       },
