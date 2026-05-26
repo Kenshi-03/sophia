@@ -87,6 +87,30 @@ export interface DiversityMetrics {
   continuityProtectionSkips: string[];
 }
 
+export interface AssembledReasoningContext {
+  systemLayer: string;
+  continuityLayer: string;
+  identityLayer: string;
+  roadmapLayer: string;
+  semanticLayer: string;
+  historicalLayer: string;
+  auxiliaryLayer: string;
+  metadata: {
+    totalTokens: number;
+    tokensPerLayer: Record<string, number>;
+    validationPassed: boolean;
+    assemblyDurationMs: number;
+    candidateCount: number;
+    protectedAnchorIds: string[];
+    orderingRationale: string[];
+    overflowDetected: boolean;
+    overflowTokens: number;
+    truncatedCandidateIds: string[];
+    truncatedReason: string;
+    finalResolvedTokenCount: number;
+  };
+}
+
 export interface RetrievalStagingArea {
   rawCandidates: RetrievalCandidate[];
   semanticCandidates: RetrievalCandidate[];
@@ -113,6 +137,7 @@ export interface RetrievalStagingArea {
       candidateReductionRate?: number;
     };
     diversityMetrics?: DiversityMetrics;
+    assembledContext?: AssembledReasoningContext;
   };
   traceability: {
     filtersApplied: string[];

@@ -78,7 +78,17 @@ export async function POST(request: Request) {
     });
 
     // Assemble LLM context payload using the budgeted candidates
-    const context = assembleAgentContext(query, wm.getState().retrievalStaging.rawCandidates, events);
+    const activeState = wm.getState();
+    const context = assembleAgentContext(
+      query,
+      activeState.retrievalStaging.rawCandidates,
+      events,
+      {
+        sessionId: activeState.sessionId,
+        currentStage: activeState.currentStage,
+        protectedAnchorIds: (activeState.retrievalStaging.metadata as any).budgetingMetrics?.protectedAnchorIds
+      }
+    );
 
     // 2. Transition to 'reasoning'
     await wm.updateState((state) => {

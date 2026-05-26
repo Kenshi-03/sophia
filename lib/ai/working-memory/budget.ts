@@ -1,6 +1,7 @@
 import { RetrievalCandidate, WorkingMemoryState } from "./types";
 import { logger } from "../../logger";
 import { ContextDiversityEngine } from "./diversity";
+import { ContextAssemblyEngine } from "./assembly";
 
 export interface PruningTraceEntry {
   candidateId: string;
@@ -480,17 +481,33 @@ export class TokenBudgetEngine {
       }
     );
 
-    // 4. Calculate Final Totals using balanced candidates
-    const retrievalTokenCount = balancingResult.balanced.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
-    
-    // Add free token buffer (500 tokens)
-    const finalAcceptedTokenCount = 
-      systemTokenCount + 
+    // 3.6 Execute Final Context Assembly on balanced candidates
+    const extraTokens = 
       userPromptTokenCount + 
       workingMemoryTokenCount + 
-      retrievalTokenCount + 
       reflectionTokenCount +
       BUDGET_CONSTANTS.MIN_FREE_TOKEN_BUFFER;
+
+    const assembledContext = ContextAssemblyEngine.assemble(
+      balancingResult.balanced,
+      {
+        tokenBudget: state.tokenBudget,
+        sessionId: state.sessionId,
+        currentStage: state.currentStage,
+        protectedAnchorIds: pruningResult.protectedAnchorIds,
+        calendarEvents: state.retrievalStaging.temporalCandidates,
+        extraTokenCount: extraTokens
+      }
+    );
+
+    const truncatedIdsSet = new Set(assembledContext.metadata.truncatedCandidateIds);
+    const finalCandidates = balancingResult.balanced.filter(c => !truncatedIdsSet.has(c.id));
+
+    // 4. Calculate Final Totals using final candidates
+    const retrievalTokenCount = finalCandidates.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
+    
+    // Add free token buffer (500 tokens)
+    const finalAcceptedTokenCount = assembledContext.metadata.totalTokens;
 
     const budgetingDurationMs = Date.now() - startTime;
 
@@ -503,7 +520,7 @@ export class TokenBudgetEngine {
 
     // 6. Deep copy and build safe state update
     const stateCopy = JSON.parse(JSON.stringify(state)) as WorkingMemoryState;
-    stateCopy.retrievalStaging.rawCandidates = balancingResult.balanced;
+    stateCopy.retrievalStaging.rawCandidates = finalCandidates;
     stateCopy.currentTokenCount = finalAcceptedTokenCount;
     stateCopy.updatedAt = new Date().toISOString();
 
@@ -525,7 +542,7 @@ export class TokenBudgetEngine {
         overflowTriggered,
         emergencyPruningTriggered,
         candidateCountBefore,
-        candidateCountAfter: balancingResult.balanced.length,
+        candidateCountAfter: finalCandidates.length,
         pruningCount: pruningResult.prunedCount,
         savedTokens: pruningResult.savedTokens,
         finalAcceptedTokenCount,
@@ -536,7 +553,8 @@ export class TokenBudgetEngine {
         protectedAnchorIds: pruningResult.protectedAnchorIds,
         candidateReductionRate: pruningResult.candidateReductionRate
       },
-      diversityMetrics: balancingResult.metrics
+      diversityMetrics: balancingResult.metrics,
+      assembledContext: assembledContext
     };
 
     const balancedIds = new Set(balancingResult.balanced.map(c => c.id));
@@ -544,10 +562,16 @@ export class TokenBudgetEngine {
       .filter(c => !balancedIds.has(c.id))
       .map(c => c.id);
 
+    const finalIds = new Set(finalCandidates.map(c => c.id));
+    const assemblyDiscardedIds = balancingResult.balanced
+      .filter(c => !finalIds.has(c.id))
+      .map(c => c.id);
+
     stateCopy.retrievalStaging.traceability.discardedIds = [
       ...stateCopy.retrievalStaging.traceability.discardedIds,
       ...pruningResult.pruningTrace.map(entry => entry.candidateId),
-      ...diversityDiscardedIds
+      ...diversityDiscardedIds,
+      ...assemblyDiscardedIds
     ];
 
     return {
@@ -557,8 +581,8 @@ export class TokenBudgetEngine {
       overflowTriggered,
       emergencyPruningTriggered,
       candidateCountBefore,
-      candidateCountAfter: balancingResult.balanced.length,
-      pruningCount: pruningResult.prunedCount + diversityDiscardedIds.length,
+      candidateCountAfter: finalCandidates.length,
+      pruningCount: pruningResult.prunedCount + diversityDiscardedIds.length + assemblyDiscardedIds.length,
       savedTokens: totalTokensBefore - retrievalTokenCount,
       finalAcceptedTokenCount,
       budgetingDurationMs,
