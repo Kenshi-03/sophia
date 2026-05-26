@@ -15,6 +15,14 @@ import crypto from 'crypto';
 const redisConnection = getRedisTCPConnection();
 
 export function startWorkers() {
+  const isMock = process.env.MOCK_REDIS === 'true' || (globalThis as any).MOCK_REDIS === true;
+  if (isMock) {
+    logger.warn('Mock Redis enabled: bypassing BullMQ workers startup.');
+    return {
+      close: async () => {}
+    };
+  }
+
   logger.info('Starting BullMQ Workers...');
 
   // 1. Calendar Sync Worker
@@ -121,7 +129,7 @@ export function startWorkers() {
           await memoryQueue.add(
             `generate-embedding-${node.id}`,
             { userId, memoryId: node.id, action: 'generate-embedding' }
-          ).catch(err => {
+          ).catch((err: any) => {
             logger.error(`Failed to queue reindexing job for node ${node.id}`, err);
           });
         }

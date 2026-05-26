@@ -71,6 +71,12 @@ export function logDevCognitionObservability(
   }
 
   console.log(`\n================== DEV COGNITION OBSERVABILITY [${stage}] ==================`);
+  const devUserId = process.env.DEV_USER_ID || 'cmpmrvs6q0000u3jw6rvj83jg';
+  console.log(`[DevCognitionMode] Identity:`, JSON.stringify({
+    devMode: true,
+    activeDevUserId: devUserId,
+    activeDevEmail: "user@sophia.local"
+  }));
 
   if (data.candidatesBefore) {
     console.log(`[Retrieval] Retrieved ${data.candidatesBefore.length} raw candidates:`);

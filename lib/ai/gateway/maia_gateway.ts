@@ -6,7 +6,10 @@ import { logger } from "../../logger"
 
 // Initialize OpenAI client pointing to MAIA Router
 const getMaiaClient = (customApiKey?: string | null) => {
-  const apiKey = customApiKey || process.env.MAIA_API_KEY || ""
+  let apiKey = customApiKey || process.env.MAIA_API_KEY || ""
+  if (customApiKey && !customApiKey.startsWith("sk-")) {
+    apiKey = process.env.MAIA_API_KEY || ""
+  }
   
   return new OpenAI({
     baseURL: "https://api.maiarouter.ai/v1",
@@ -31,7 +34,10 @@ export async function generateGatewayResponse(
   options?: CustomCompletionOptions
 ): Promise<AIResponse> {
   const startTime = Date.now()
-  const apiKey = options?.customApiKey || process.env.MAIA_API_KEY || ""
+  let apiKey = options?.customApiKey || process.env.MAIA_API_KEY || ""
+  if (options?.customApiKey && !options.customApiKey.startsWith("sk-")) {
+    apiKey = process.env.MAIA_API_KEY || ""
+  }
   
   // 1. AI Health Validation: Validate API Key presence
   if (!apiKey) {

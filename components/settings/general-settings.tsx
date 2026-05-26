@@ -238,6 +238,7 @@ export default function GeneralSettings() {
             type="password"
             value={aiApiKey}
             onChange={(e) => setAiApiKey(e.target.value)}
+            autoComplete="new-password"
             placeholder="Masukkan token API MAIA Anda..."
             className="w-full px-3 py-2.5 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20 placeholder-[#c7c4d7]/35 transition-all animate-fade-in"
           />

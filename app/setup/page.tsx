@@ -124,6 +124,7 @@ export default function OnboardingSetupPage() {
                   type="password"
                   value={aiApiKey}
                   onChange={(e) => setAiApiKey(e.target.value)}
+                  autoComplete="new-password"
                   placeholder="Masukkan token API MAIA (Opsional jika didefinisikan di Server)"
                   className="w-full bg-[#181a1f] border border-white/5 rounded-xl px-3 py-2.5 text-xs text-white placeholder-[#c7c4d7]/30 focus:outline-none focus:border-[#8083ff]/50"
                 />

@@ -13,14 +13,21 @@ function computeContentHash(content: string): string {
 }
 
 async function ensureDevUserAndSeeds() {
+  const devUserId = process.env.DEV_USER_ID || "cmpmrvs6q0000u3jw6rvj83jg";
+  const devEmail = "user@sophia.local";
+  const devName = "Sophia Dev";
+
   // 1. Ensure dev user exists in database
   const mockUser = await prisma.user.upsert({
-    where: { id: "dev-user" },
-    update: {},
+    where: { id: devUserId },
+    update: {
+      email: devEmail,
+      name: devName,
+    },
     create: {
-      id: "dev-user",
-      email: "dev@sophia.local",
-      name: "SOPHIA Dev User User"
+      id: devUserId,
+      email: devEmail,
+      name: devName,
     }
   });
 

@@ -15,14 +15,7 @@ describe("DEV_COGNITION_MODE Tests", () => {
   const originalEnv = { ...process.env };
 
   beforeAll(async () => {
-    // Ensure clean slate before tests start
-    try {
-      await prisma.cognitiveProfile.deleteMany({ where: { userId: "dev-user" } });
-      await prisma.memoryNode.deleteMany({ where: { userId: "dev-user" } });
-      await prisma.user.deleteMany({ where: { id: "dev-user" } });
-    } catch (e) {
-      // Ignore
-    }
+    // No-op to preserve persistent dev identity state
   });
 
   beforeEach(async () => {
@@ -32,14 +25,6 @@ describe("DEV_COGNITION_MODE Tests", () => {
 
   afterAll(async () => {
     process.env = originalEnv;
-    // Clean up dev-user after tests to keep DB clean
-    try {
-      await prisma.cognitiveProfile.deleteMany({ where: { userId: "dev-user" } });
-      await prisma.memoryNode.deleteMany({ where: { userId: "dev-user" } });
-      await prisma.user.deleteMany({ where: { id: "dev-user" } });
-    } catch (e) {
-      // Ignore if user does not exist
-    }
     await prisma.$disconnect();
   });
 
@@ -66,24 +51,25 @@ describe("DEV_COGNITION_MODE Tests", () => {
       (process.env as any).NODE_ENV = "development";
       process.env.DEV_COGNITION_MODE = "true";
 
+      const targetDevUserId = process.env.DEV_USER_ID || "cmpmrvs6q0000u3jw6rvj83jg";
       const user = await getCurrentUser();
       expect(user).toBeDefined();
-      expect(user!.id).toBe("dev-user");
-      expect(user!.email).toBe("dev@sophia.local");
-      expect(user!.name).toBe("SOPHIA Dev User User");
+      expect(user!.id).toBe(targetDevUserId);
+      expect(user!.email).toBe("user@sophia.local");
+      expect(user!.name).toBe("Sophia Dev");
 
       // Verify the CognitiveProfile was upserted
       const profile = await prisma.cognitiveProfile.findUnique({
-        where: { userId: "dev-user" }
+        where: { userId: targetDevUserId }
       });
       expect(profile).toBeDefined();
-      expect(profile!.userId).toBe("dev-user");
+      expect(profile!.userId).toBe(targetDevUserId);
 
       // Verify the MemoryNodes were seeded
       const memoriesCount = await prisma.memoryNode.count({
-        where: { userId: "dev-user" }
+        where: { userId: targetDevUserId }
       });
-      expect(memoriesCount).toBe(5);
+      expect(memoriesCount).toBeGreaterThanOrEqual(5);
     });
   });
 

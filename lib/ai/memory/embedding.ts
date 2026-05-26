@@ -58,7 +58,10 @@ export async function getEmbedding(text: string, userId: string): Promise<number
   // 2. Fetch API key from settings or env
   const settings = await getSettings(userId);
   const customApiKey = settings?.aiApiKey ? decrypt(settings.aiApiKey) : null;
-  const apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  let apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  if (customApiKey && !customApiKey.startsWith("AIza")) {
+    apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  }
 
   if (!apiKey) {
     throw new Error("Kredensial API Key Gemini tidak terkonfigurasi. Selesaikan onboarding atau hubungi administrator.");

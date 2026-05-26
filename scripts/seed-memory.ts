@@ -859,13 +859,21 @@ async function main() {
   console.log(`  Total entries to seed: ${allMemories.length}`);
   console.log("");
 
+  const devUserId = process.env.DEV_USER_ID || "cmpmrvs6q0000u3jw6rvj83jg";
+  const devEmail = "user@sophia.local";
+  const devName = "Sophia Dev";
+
   // 1. Ensure dev user exists
   const user = await prisma.user.upsert({
-    where: { email: "user@sophia.local" },
-    update: {},
+    where: { id: devUserId },
+    update: {
+      email: devEmail,
+      name: devName,
+    },
     create: {
-      email: "user@sophia.local",
-      name: "SOPHIA Dev User",
+      id: devUserId,
+      email: devEmail,
+      name: devName,
     },
   });
   console.log(`  ✓ User: ${user.name} (${user.email}) [${user.id}]`);

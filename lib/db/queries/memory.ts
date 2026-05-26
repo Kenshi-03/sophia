@@ -43,7 +43,7 @@ export async function createMemoryNode(data: {
     await memoryQueue.add(
       `generate-embedding-${node.id}`,
       { userId: node.userId, memoryId: node.id, action: 'generate-embedding' }
-    ).catch(err => {
+    ).catch((err: any) => {
       console.error("Failed to add generate-embedding job to queue:", err);
     });
 
@@ -144,7 +144,7 @@ export async function updateMemoryNode(
       await memoryQueue.add(
         `generate-embedding-${updated.id}`,
         { userId: updated.userId, memoryId: updated.id, action: 'generate-embedding' }
-      ).catch(err => {
+      ).catch((err: any) => {
         console.error("Failed to add generate-embedding job to queue:", err);
       });
     }

@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   try {
-    const userId = 'dev-user';
+    const userId = process.env.DEV_USER_ID || 'cmpmrvs6q0000u3jw6rvj83jg';
 
     // 1. Get active executions from Redis
     const redis = getRedisClient();
