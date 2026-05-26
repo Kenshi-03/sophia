@@ -6,6 +6,7 @@ import { calculateDecayedImportance } from "./decay-manager";
 import { getRelatedContexts } from "./relationship-engine";
 import { logger } from "../../logger";
 import { RetrievalCandidate, RetrievalSourceType } from "../working-memory/types";
+import { ContextScoringEngine } from "../working-memory/scoring";
 
 /**
  * Map MemoryNode to RetrievalCandidate DTO cleanly and deterministically.
@@ -129,13 +130,14 @@ export async function retrieveRelevantMemories(
         } as unknown as MemoryNode;
 
         const decayedImportance = calculateDecayedImportance(node);
-        return mapToRetrievalCandidate(
+        const rawCandidate = mapToRetrievalCandidate(
           node,
-          0,
+          0, // empty query relevance
           decayedImportance,
-          decayedImportance,
+          0, // combinedScore computed below
           "Recent Memory Staging"
         );
+        return ContextScoringEngine.scoreCandidate(rawCandidate);
       });
     } else {
       // 2. Query has text. Attempt semantic similarity vector search
@@ -176,32 +178,14 @@ export async function retrieveRelevantMemories(
           const similarity = res.similarityScore;
           const decayedImportance = calculateDecayedImportance(node);
 
-          // Taxonomy multipliers
-          let taxonomyWeight = 1.0;
-          switch (node.taxonomy) {
-            case "insight": taxonomyWeight = 1.3; break;
-            case "stress-marker": taxonomyWeight = 1.25; break;
-            case "deep-work-session": taxonomyWeight = 1.2; break;
-            case "recovery-event": taxonomyWeight = 1.15; break;
-            case "planning": taxonomyWeight = 1.1; break;
-            case "reflection": taxonomyWeight = 1.0; break;
-          }
-
-          // Recency bias (prioritize recent behaviors gently)
-          const createdTime = node.createdAt ? new Date(node.createdAt).getTime() : Date.now();
-          const daysPassed = (Date.now() - createdTime) / (1000 * 3600 * 24);
-          const recencyWeight = 1.0 / (1.0 + (daysPassed * 0.015));
-
-          const reliability = node.reliability ?? 1.0;
-          const combinedScore = similarity * decayedImportance * taxonomyWeight * reliability * recencyWeight;
-
-          return mapToRetrievalCandidate(
+          const rawCandidate = mapToRetrievalCandidate(
             node,
             Math.round(similarity * 100),
             decayedImportance,
-            combinedScore,
+            0, // combinedScore computed below
             "Semantic Retrieval"
           );
+          return ContextScoringEngine.scoreCandidate(rawCandidate);
         });
       } else {
         // Fallback: Word overlap keyword matching
@@ -244,15 +228,15 @@ export async function retrieveRelevantMemories(
 
             const similarity = queryWords.length > 0 ? (matchCount / queryWords.length) : 0;
             const decayedImportance = calculateDecayedImportance(node);
-            const combinedScore = similarity * decayedImportance * (node.reliability ?? 1.0);
 
-            return mapToRetrievalCandidate(
+            const rawCandidate = mapToRetrievalCandidate(
               node,
               Math.round(similarity * 100),
               decayedImportance,
-              combinedScore,
+              0, // combinedScore computed below
               "Keyword Match Staging"
             );
+            return ContextScoringEngine.scoreCandidate(rawCandidate);
           })
           .filter((n) => n.combinedScore > 0);
       }
@@ -337,7 +321,7 @@ export async function retrieveRelevantMemories(
     }
 
     if (relatedContextText.length > 0) {
-      resultContextNodes.push({
+      const rawCandidate: RetrievalCandidate = {
         id: "synthetic-relations-node",
         content: `Relasi Konteks Terkait:\n${relatedContextText.join("\n")}`,
         category: "Semantic Relations",
@@ -347,7 +331,8 @@ export async function retrieveRelevantMemories(
         decayedImportance: 1.0,
         combinedScore: 1.0,
         traceReason: "System Generated Relations",
-      });
+      };
+      resultContextNodes.push(ContextScoringEngine.scoreCandidate(rawCandidate));
     }
 
     // Fetch and format user Cognitive Profile (up to 20% budget)
@@ -367,7 +352,7 @@ export async function retrieveRelevantMemories(
         }
 
         if (profileText.length <= profileBudget) {
-          resultContextNodes.push({
+          const rawCandidate: RetrievalCandidate = {
             id: "synthetic-profile-node",
             content: profileText,
             category: "Behavioral Profile",
@@ -377,7 +362,8 @@ export async function retrieveRelevantMemories(
             decayedImportance: 1.0,
             combinedScore: 1.0,
             traceReason: "System Generated Profile",
-          });
+          };
+          resultContextNodes.push(ContextScoringEngine.scoreCandidate(rawCandidate));
         }
       }
     } catch (err) {

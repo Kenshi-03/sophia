@@ -11,6 +11,7 @@ import prisma from '@/lib/db/prisma';
 import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/store';
 import { traceWorkingMemory } from '@/lib/ai/working-memory/observability';
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
+import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -50,7 +51,13 @@ export async function POST(request: Request) {
 
     // Stage candidates in Working Memory
     await wm.updateState((state) => {
-      state.retrievalStaging.rawCandidates = relevantMemories;
+      // Re-score memories with active session options (sessionId, currentStage)
+      const scoredMemories = ContextScoringEngine.scoreCandidates(relevantMemories, {
+        sessionId: state.sessionId,
+        currentStage: state.currentStage
+      });
+
+      state.retrievalStaging.rawCandidates = scoredMemories;
 
       state.retrievalStaging.temporalCandidates = events.map((e) => ({
         id: e.id,

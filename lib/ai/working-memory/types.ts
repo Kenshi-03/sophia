@@ -13,9 +13,12 @@ export type RetrievalSourceType =
   | 'semantic_memory'
   | 'episodic_memory'
   | 'google_calendar_event'
+  | 'calendar_event'
   | 'task'
   | 'user_profile'
-  | 'relationship_link';
+  | 'relationship_link'
+  | 'active_session_context'
+  | 'synthetic_context';
 
 export type ExecutionPriority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -61,6 +64,16 @@ export interface RetrievalCandidate {
   tokenEstimate?: number;
   temporalWeight?: number;
   confidenceScore?: number;
+  scoreBreakdown?: {
+    semanticScore: number;
+    temporalWeight: number;
+    continuityWeight: number;
+    confidenceScore: number;
+    sourceMultiplier: number;
+    combinedScoreBeforeMultiplier: number;
+    finalCombinedScore: number;
+    continuityReason?: string;
+  };
 }
 
 export interface RetrievalStagingArea {
