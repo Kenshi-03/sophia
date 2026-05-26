@@ -98,7 +98,7 @@ model Event {
   endTime       DateTime
   location      String?
 
-  googleEventId String?  @unique
+  googleEventId String?
 
   calendarId    String
   calendar      CalendarCategory @relation(fields: [calendarId], references: [id], onDelete: Cascade)
@@ -108,6 +108,8 @@ model Event {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([userId, googleEventId])
 }
 
 model UserSettings {
@@ -131,6 +133,9 @@ model UserSettings {
   themeAccent            String   @default("lavender")
   autoSyncCalendar       Boolean  @default(true)
   autoDndFocus           Boolean  @default(true)
+
+  isOnboarded            Boolean  @default(false)
+  aiApiKey               String?
 
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

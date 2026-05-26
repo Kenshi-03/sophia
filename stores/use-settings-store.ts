@@ -14,6 +14,8 @@ interface SettingsState {
   autoSyncCalendar: boolean
   autoDndFocus: boolean
   theme: string
+  isOnboarded: boolean
+  aiApiKey: string | null
   
   setUserName: (name: string) => void
   setDefaultAiModel: (model: string) => void
@@ -27,6 +29,8 @@ interface SettingsState {
   setAutoSyncCalendar: (val: boolean) => void
   setAutoDndFocus: (val: boolean) => void
   setTheme: (theme: string) => void
+  setIsOnboarded: (onboarded: boolean) => void
+  setAiApiKey: (key: string | null) => void
   hydrateStore: (settings: Partial<SettingsState>) => void
 }
 
@@ -43,6 +47,8 @@ export const useSettingsStore = create<SettingsState>()((set) => ({
   autoSyncCalendar: true,
   autoDndFocus: true,
   theme: "dark",
+  isOnboarded: false,
+  aiApiKey: null,
 
   setUserName: (userName) => set({ userName }),
   setDefaultAiModel: (defaultAiModel) => set({ defaultAiModel, aiModel: defaultAiModel }),
@@ -56,6 +62,8 @@ export const useSettingsStore = create<SettingsState>()((set) => ({
   setAutoSyncCalendar: (autoSyncCalendar) => set({ autoSyncCalendar }),
   setAutoDndFocus: (autoDndFocus) => set({ autoDndFocus }),
   setTheme: (theme) => set({ theme }),
+  setIsOnboarded: (isOnboarded) => set({ isOnboarded }),
+  setAiApiKey: (aiApiKey) => set({ aiApiKey }),
   hydrateStore: (settings) => set((state) => ({ ...state, ...settings })),
 }))
 

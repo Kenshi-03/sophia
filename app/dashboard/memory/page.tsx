@@ -63,7 +63,7 @@ export default function PermanentMemoryPage() {
 
   const searchMemories = async (queryStr: string) => {
     try {
-      const res = await fetch(`/api/memory/search?userId=user@sophia.local&query=${encodeURIComponent(queryStr)}`)
+      const res = await fetch(`/api/memory/search?query=${encodeURIComponent(queryStr)}`)
       if (res.ok) {
         const data = await res.json()
         setMemories(data)
@@ -99,7 +99,6 @@ export default function PermanentMemoryPage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            userId: "user@sophia.local",
             content: data.content,
             category: data.category,
             tags: data.tags,

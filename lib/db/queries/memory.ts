@@ -39,45 +39,10 @@ export async function getMemoryNodesByUser(userId: string) {
       },
     });
     
-    // If the database is connected but returning empty, return some defaults so the UI has seed data
-    if (nodes.length === 0) {
-      return [
-        {
-          id: '1',
-          content: 'Parenthesis in NextJS routes e.g. (dashboard) acts as route grouping. Omit from actual pathname.',
-          category: 'Research',
-          tags: ['web-dev', 'nextjs', 'routing'],
-          createdAt: new Date(),
-        },
-        {
-          id: '2',
-          content: 'Academic lecture scheduled in Room 302 focuses on higher cognitive computing logs.',
-          category: 'Academics',
-          tags: ['calendar', 'schedule', 'academics'],
-          createdAt: new Date(),
-        }
-      ];
-    }
-    
     return nodes;
   } catch (error) {
-    console.error('Database query getMemoryNodesByUser failed, returning mock:', error);
-    return [
-      {
-        id: '1',
-        content: 'Parenthesis in NextJS routes e.g. (dashboard) acts as route grouping. Omit from actual pathname.',
-        category: 'Research',
-        tags: ['web-dev', 'nextjs', 'routing'],
-        createdAt: new Date(),
-      },
-      {
-        id: '2',
-        content: 'Academic lecture scheduled in Room 302 focuses on higher cognitive computing logs.',
-        category: 'Academics',
-        tags: ['calendar', 'schedule', 'academics'],
-        createdAt: new Date(),
-      }
-    ];
+    console.error('Database query getMemoryNodesByUser failed:', error);
+    return [];
   }
 }
 

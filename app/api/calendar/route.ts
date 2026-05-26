@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
 import { createGoogleEvent } from "@/lib/google/calendar/create-event";
@@ -7,15 +7,9 @@ import { createGoogleEvent } from "@/lib/google/calendar/create-event";
 // GET: Fetch all calendar categories and events for the authenticated user
 export async function GET() {
   try {
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
-
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
-
+    const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Dynamic Seeding of Categories
@@ -75,11 +69,14 @@ export async function GET() {
 // POST: Create a new event and sync it to Google Calendar if credentials exist
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Refresh user object to fetch accounts
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
       include: {
         accounts: {
           where: { provider: "google" },
@@ -87,7 +84,7 @@ export async function POST(request: Request) {
       },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -99,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     const category = await prisma.calendarCategory.findUnique({
-      where: { id: calendarId, userId: user.id },
+      where: { id: calendarId, userId: dbUser.id },
     });
 
     if (!category) {
@@ -109,7 +106,7 @@ export async function POST(request: Request) {
     // 1. Create event locally
     const event = await prisma.event.create({
       data: {
-        userId: user.id,
+        userId: dbUser.id,
         calendarId,
         title,
         description: description || null,
@@ -120,13 +117,13 @@ export async function POST(request: Request) {
     });
 
     let googleEventId: string | null = null;
-    const hasGoogleAccount = user.accounts.length > 0;
+    const hasGoogleAccount = dbUser.accounts.length > 0;
     const isGoogleCalValid = category.googleCalId && !category.googleCalId.startsWith("local-");
 
     // 2. Sync to Google Calendar if available
     if (hasGoogleAccount && isGoogleCalValid) {
       try {
-        googleEventId = await createGoogleEvent(user.id, category.googleCalId, {
+        googleEventId = await createGoogleEvent(dbUser.id, category.googleCalId, {
           title,
           description,
           startTime,

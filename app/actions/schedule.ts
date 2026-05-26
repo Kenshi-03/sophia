@@ -1,32 +1,27 @@
 "use server"
 
-import { auth } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { CalendarEvent } from "@/types/calendar";
 import { revalidatePath } from "next/cache";
 
 export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { id?: string }) {
   try {
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!dbUser) {
-      return { success: false, error: "User not found" };
+    const user = await getCurrentUser();
+    if (!user) {
+      return { success: false, error: "Unauthorized" };
     }
 
     // Find or seed a category for the user
     let category = await prisma.calendarCategory.findFirst({
-      where: { userId: dbUser.id, categoryType: "deep-work" },
+      where: { userId: user.id, categoryType: "deep-work" },
     });
 
     if (!category) {
       const { seedDefaultCategoriesForUser } = await import("@/lib/settings/category-seeding");
-      await seedDefaultCategoriesForUser(dbUser.id);
+      await seedDefaultCategoriesForUser(user.id);
       category = await prisma.calendarCategory.findFirst({
-        where: { userId: dbUser.id, categoryType: "deep-work" },
+        where: { userId: user.id, categoryType: "deep-work" },
       });
     }
 
@@ -39,7 +34,7 @@ export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { 
     const newEvent = await prisma.event.create({
       data: {
         id: event.id || undefined,
-        userId: dbUser.id,
+        userId: user.id,
         calendarId,
         title: event.title,
         description: event.description || null,

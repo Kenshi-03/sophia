@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { useSettingsStore } from "@/stores/use-settings-store"
 import { AVAILABLE_MODELS } from "@/lib/ai/config/models"
-import { Sliders, CheckCircle, XCircle, Loader2, Sparkles, RefreshCw, Cpu, Moon, Eye, Zap, ShieldAlert } from "lucide-react"
+import { Sliders, CheckCircle, XCircle, Loader2, Sparkles, RefreshCw, Cpu, Moon, Eye, Zap, ShieldAlert, Key } from "lucide-react"
 
 export default function GeneralSettings() {
   const settings = useSettingsStore()
@@ -15,6 +15,7 @@ export default function GeneralSettings() {
   const [aiMode, setAiMode] = useState<"focus" | "creative" | "balanced">("balanced")
   const [threshold, setThreshold] = useState(75)
   const [dnd, setDnd] = useState(true)
+  const [aiApiKey, setAiApiKey] = useState("")
   
   // New persistent settings fields
   const [theme, setTheme] = useState("dark")
@@ -60,7 +61,7 @@ export default function GeneralSettings() {
     setMounted(true)
     if (settings) {
       setName(settings.userName)
-      setModel(settings.defaultAiModel)
+      setModel(settings.aiModel)
       setAiMode(settings.aiMode || "balanced")
       setThreshold(settings.cognitiveThreshold)
       setDnd(settings.autoDndFocus)
@@ -68,6 +69,7 @@ export default function GeneralSettings() {
       setMemoryDepth(settings.memoryDepth || 10)
       setProductivityIntensity(settings.productivityIntensity || "balanced")
       setLocalAIEnabled(settings.localAIEnabled || false)
+      setAiApiKey(settings.aiApiKey || "")
     }
   }, [settings])
 
@@ -108,6 +110,7 @@ export default function GeneralSettings() {
           localAIEnabled,
           cognitiveThreshold: threshold,
           autoDndFocus: dnd,
+          aiApiKey,
         }),
       })
 
@@ -128,8 +131,12 @@ export default function GeneralSettings() {
       settings.setTheme(updatedSettings.theme)
       settings.setCognitiveThreshold(updatedSettings.cognitiveThreshold)
       settings.setAutoDndFocus(updatedSettings.autoDndFocus)
+      settings.setAiApiKey(updatedSettings.aiApiKey)
 
       setShowSuccess(true)
+      
+      // Recheck health status
+      checkGatewayHealth()
     } catch (err: any) {
       console.error("Failed to save settings:", err)
       setSaveError(err.message || "Koneksi terputus. Gagal menyimpan ke cloud.")
@@ -219,6 +226,21 @@ export default function GeneralSettings() {
               <option value="creative">Idea / Creative (temp: 0.9)</option>
             </select>
           </div>
+        </div>
+
+        {/* Row for AI Gateway Key */}
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 flex items-center gap-1.5">
+            <Key size={11} className="text-[#adc6ff]" />
+            <span>AI Gateway API Key</span>
+          </label>
+          <input
+            type="password"
+            value={aiApiKey}
+            onChange={(e) => setAiApiKey(e.target.value)}
+            placeholder="Masukkan token API MAIA Anda..."
+            className="w-full px-3 py-2.5 bg-[#111316] border border-white/5 focus:border-[#c0c1ff]/30 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/20 placeholder-[#c7c4d7]/35 transition-all animate-fade-in"
+          />
         </div>
 
         {/* Row 3: Memory Depth & Productivity Intensity */}

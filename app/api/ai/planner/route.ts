@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth/session';
+import { getSettings } from '@/lib/settings/settings';
 import { generateGatewayResponse } from '@/lib/ai/gateway/maia_gateway';
 import { PLANNER_PROMPT } from '@/lib/ai/prompts/planner';
 import { CalendarEvent } from '@/types/calendar';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { events = [], model, aiMode } = await request.json() as { 
       events: CalendarEvent[]; 
       model?: string;
@@ -28,10 +35,15 @@ export async function POST(request: Request) {
       }
     }`;
 
+    const settings = await getSettings(user.id);
+    const { decrypt } = await import("@/lib/security/encryption");
+    const customApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null;
+
     const gatewayResponse = await generateGatewayResponse(prompt, {
       systemInstruction: PLANNER_PROMPT,
-      model,
+      model: model || settings.aiModel,
       aiMode: aiMode || 'focus', // Default to focus mode for highly logical planning tasks
+      customApiKey,
     });
 
     // Try to parse JSON from the response text

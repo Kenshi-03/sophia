@@ -1,57 +1,37 @@
 import DashboardSidebar from "@/components/dashboard/dashboard-sidebar"
 import DashboardHeader from "@/components/dashboard/dashboard-header"
 import DashboardBottomNav from "@/components/dashboard/dashboard-bottom-nav"
-import { auth } from "@/lib/auth/auth"
-import { prisma } from "@/lib/db/prisma"
+import { requireSession } from "@/lib/auth/session"
 import { getSettings } from "@/lib/settings/settings"
 import StoreInitializer from "@/components/providers/store-initializer"
+import { redirect } from "next/navigation"
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const session = await auth()
-  const email = session?.user?.email || "user@sophia.local"
+  const { session, user } = await requireSession()
+  const settings = await getSettings(user.id)
 
-  let dbUser = await prisma.user.findUnique({
-    where: { email },
-  })
-
-  // Fallback to first user in dev mode if not found
-  if (!dbUser) {
-    dbUser = await prisma.user.findFirst()
+  if (!settings.isOnboarded) {
+    redirect("/setup")
   }
 
-  let settingsData = {
-    userName: "Sophia Dev",
-    theme: "dark",
-    aiModel: "maia/gemini-2.5-flash",
-    aiMode: "balanced" as "focus" | "creative" | "balanced",
-    memoryDepth: 10,
-    productivityIntensity: "balanced",
-    localAIEnabled: false,
-    cognitiveThreshold: 75,
-    themeAccent: "lavender" as "lavender" | "mint" | "blue",
-    autoSyncCalendar: true,
-    autoDndFocus: true,
-  }
-
-  if (dbUser) {
-    const dbSettings = await getSettings(dbUser.id)
-    settingsData = {
-      userName: dbUser.name || "Sophia Dev",
-      theme: dbSettings.theme,
-      aiModel: dbSettings.aiModel,
-      aiMode: (dbSettings.aiMode as "focus" | "creative" | "balanced") || "balanced",
-      memoryDepth: dbSettings.memoryDepth,
-      productivityIntensity: dbSettings.productivityIntensity,
-      localAIEnabled: dbSettings.localAIEnabled,
-      cognitiveThreshold: dbSettings.cognitiveThreshold,
-      themeAccent: (dbSettings.themeAccent as "lavender" | "mint" | "blue") || "lavender",
-      autoSyncCalendar: dbSettings.autoSyncCalendar,
-      autoDndFocus: dbSettings.autoDndFocus,
-    }
+  const settingsData = {
+    userName: user.name || "Sophia Dev",
+    theme: settings.theme,
+    aiModel: settings.aiModel,
+    aiMode: (settings.aiMode as "focus" | "creative" | "balanced") || "balanced",
+    memoryDepth: settings.memoryDepth,
+    productivityIntensity: settings.productivityIntensity,
+    localAIEnabled: settings.localAIEnabled,
+    cognitiveThreshold: settings.cognitiveThreshold,
+    themeAccent: (settings.themeAccent as "lavender" | "mint" | "blue") || "lavender",
+    autoSyncCalendar: settings.autoSyncCalendar,
+    autoDndFocus: settings.autoDndFocus,
+    isOnboarded: settings.isOnboarded,
+    aiApiKey: settings.aiApiKey ? "••••••••" : null,
   }
 
   return (

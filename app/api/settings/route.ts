@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth/auth"
+import { getCurrentUser } from "@/lib/auth/session"
 import { prisma } from "@/lib/db/prisma"
 import { getSettings, updateSettings } from "@/lib/settings/settings"
+import { encrypt } from "@/lib/security/encryption"
 
 /**
  * GET /api/settings
@@ -9,20 +10,15 @@ import { getSettings, updateSettings } from "@/lib/settings/settings"
  */
 export async function GET() {
   try {
-    const session = await auth()
-    const email = session?.user?.email || "user@sophia.local"
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-    })
-
+    const dbUser = await getCurrentUser()
     if (!dbUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const settings = await getSettings(dbUser.id)
     return NextResponse.json({
       ...settings,
+      aiApiKey: settings.aiApiKey ? "••••••••" : null,
       userName: dbUser.name || "Sophia Dev"
     })
   } catch (error: any) {
@@ -40,15 +36,9 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   try {
-    const session = await auth()
-    const email = session?.user?.email || "user@sophia.local"
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-    })
-
+    const dbUser = await getCurrentUser()
     if (!dbUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await req.json()
@@ -76,6 +66,19 @@ export async function POST(req: Request) {
     }
     if (typeof body.autoDndFocus === "boolean") {
       updatedFields.autoDndFocus = body.autoDndFocus
+    }
+    
+    if (typeof body.aiApiKey === "string") {
+      const trimmedKey = body.aiApiKey.trim();
+      if (trimmedKey === "") {
+        updatedFields.aiApiKey = null;
+      } else if (trimmedKey !== "••••••••") {
+        updatedFields.aiApiKey = encrypt(trimmedKey);
+      }
+    }
+
+    if (typeof body.isOnboarded === "boolean") {
+      updatedFields.isOnboarded = body.isOnboarded
     }
     
     if (body.memoryDepth !== undefined) {
@@ -108,6 +111,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ...settings,
+      aiApiKey: settings.aiApiKey ? "••••••••" : null,
       userName: updatedUser?.name || "Sophia Dev"
     })
   } catch (error: any) {

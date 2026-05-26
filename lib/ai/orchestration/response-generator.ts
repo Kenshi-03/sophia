@@ -5,7 +5,7 @@ import { AIMode } from '../types';
 export async function generateAiResponse(
   userQuery: string,
   context: string,
-  options?: { model?: string; aiMode?: AIMode }
+  options?: { model?: string; aiMode?: AIMode; customApiKey?: string | null }
 ): Promise<string> {
   try {
     const prompt = `Context:\n${context}\n\nUser Query: ${userQuery}`;
@@ -14,6 +14,7 @@ export async function generateAiResponse(
       systemInstruction: SYSTEM_PROMPT,
       model: options?.model,
       aiMode: options?.aiMode,
+      customApiKey: options?.customApiKey,
     });
     
     return response.text || 'No response generated.';

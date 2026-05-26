@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { syncUserCalendar } from "@/lib/google/calendar/sync";
 import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
 
 export async function POST() {
   try {
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const dbUser = await prisma.user.findUnique({
-      where: { email },
+      where: { id: user.id },
       include: {
         accounts: {
           where: { provider: "google" },

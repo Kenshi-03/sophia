@@ -1,13 +1,12 @@
 import React from "react"
-import { auth } from "@/lib/auth/auth"
+import { requireSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/db/prisma"
 import { getSettings } from "@/lib/settings/settings"
 import PageHeader from "@/components/shared/page-header"
 import SettingsContainer from "@/components/settings/settings-container"
 
 export default async function SettingsPage() {
-  const session = await auth()
-  const email = session?.user?.email || "user@sophia.local"
+  const { session, user } = await requireSession()
 
   // Check if Google credentials exist in environments
   const hasCredentials = !!(
@@ -17,11 +16,10 @@ export default async function SettingsPage() {
 
   let memoryNodesCount = 0
   let initialSettings = null
-  let dbUser = null
 
   try {
-    dbUser = await prisma.user.findUnique({
-      where: { email },
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
       include: {
         _count: {
           select: { memories: true },
@@ -32,31 +30,16 @@ export default async function SettingsPage() {
     if (dbUser) {
       memoryNodesCount = dbUser._count.memories
       initialSettings = await getSettings(dbUser.id)
-    } else {
-      // Seed user fallback
-      const seedUser = await prisma.user.findFirst({
-        include: {
-          _count: {
-            select: { memories: true },
-          },
-        },
-      })
-      if (seedUser) {
-        dbUser = seedUser
-        memoryNodesCount = seedUser._count.memories
-        initialSettings = await getSettings(seedUser.id)
-      }
     }
   } catch (error) {
-    console.warn("Database connection offline in Settings Page. Falling back to default mock node count.", error)
-    memoryNodesCount = 2 // Match length of mockMemories in lib/db/mocks.ts
+    console.error("Database connection offline in Settings Page.", error)
   }
 
-  // Serialize Prisma date fields to string or remove them for Next.js Server Component props compatibility
   const serializedSettings = initialSettings
     ? {
         ...initialSettings,
-        userName: (dbUser?.name || "Sophia Dev"),
+        aiApiKey: initialSettings.aiApiKey ? "••••••••" : null,
+        userName: (user.name || "Sophia Dev"),
         createdAt: initialSettings.createdAt?.toISOString(),
         updatedAt: initialSettings.updatedAt?.toISOString(),
       }

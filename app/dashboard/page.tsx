@@ -1,29 +1,21 @@
-import { auth } from "@/lib/auth/auth"
+import { requireSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/db/prisma"
-import {
-  mockUser,
-  mockTasks,
-  mockEvents,
-  mockMemories,
-  mockAgents,
-} from "@/lib/db/mocks"
+import { mockAgents } from "@/lib/db/mocks"
 import DashboardGrid from "@/components/dashboard/dashboard-grid"
 import { DashboardTask } from "@/types/dashboard"
 import { CalendarEvent } from "@/types/calendar"
 import { MemoryNode } from "@/types/memory"
 
 export default async function DashboardPage() {
-  const session = await auth()
-  const email = session?.user?.email || "user@sophia.local"
+  const { session, user } = await requireSession()
 
-  let dbUser = null
   let tasks: DashboardTask[] = []
   let events: CalendarEvent[] = []
   let memories: MemoryNode[] = []
 
   try {
-    dbUser = await prisma.user.findUnique({
-      where: { email },
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
       include: {
         tasks: {
           orderBy: { createdAt: "desc" },
@@ -38,25 +30,6 @@ export default async function DashboardPage() {
         },
       },
     })
-
-    // Graceful fallback to the first seeded user if the session user is not found
-    if (!dbUser) {
-      dbUser = await prisma.user.findFirst({
-        include: {
-          tasks: {
-            orderBy: { createdAt: "desc" },
-          },
-          events: {
-            include: { calendar: true },
-            orderBy: { startTime: "asc" },
-          },
-          memories: {
-            orderBy: { createdAt: "desc" },
-            take: 2,
-          },
-        },
-      })
-    }
 
     if (dbUser) {
       tasks = dbUser.tasks.map((t: any) => ({
@@ -101,45 +74,18 @@ export default async function DashboardPage() {
       }))
     }
   } catch (error) {
-    console.warn("Database connection could not be established. Falling back to local mock data.", error)
+    console.error("Database connection could not be established in Dashboard Page.", error)
   }
 
-  // Seeding mock fallbacks if database returns empty or fails
-  const name = dbUser?.name || mockUser.name
+  const name = user.name || "User"
   
-  if (tasks.length === 0) {
-    tasks = mockTasks
-  }
-  
-  if (events.length === 0) {
-    events = mockEvents.map((event) => {
-      const isFocus = event.title.toLowerCase().includes("focus") || event.title.toLowerCase().includes("deep work")
-      return {
-        ...event,
-        startTime: new Date(event.startTime).toISOString(),
-        endTime: new Date(event.endTime).toISOString(),
-        calendarId: isFocus ? "mock-cat-1" : "mock-cat-2",
-        color: isFocus ? "#2563EB" : "#3B82F6",
-        categoryName: isFocus ? "Deep Work" : "Jadwal Kelas",
-        categoryType: isFocus ? "deep-work" : "academic",
-        isFocusMode: isFocus,
-        cognitiveLoad: isFocus ? 75 : 35,
-        tags: isFocus ? ["deep-work"] : ["academic"],
-      }
-    })
-  }
-
-  if (memories.length === 0) {
-    memories = mockMemories
-  }
-
   // Find active focus task (first incomplete task)
   const activeFocusTask = tasks.find((t) => !t.completed) || {
     id: "no-task",
     title: "Tidak ada fokus aktif",
     content: "Buat tugas baru di ruang kerja Anda untuk mulai melacak sesi fokus kognitif.",
     completed: false,
-    userId: "mock-user",
+    userId: user.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }

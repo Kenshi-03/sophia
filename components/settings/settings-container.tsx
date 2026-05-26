@@ -33,6 +33,8 @@ export default function SettingsContainer({ hasCredentials, memoryNodesCount, in
         themeAccent: initialSettings.themeAccent,
         autoSyncCalendar: initialSettings.autoSyncCalendar,
         autoDndFocus: initialSettings.autoDndFocus,
+        isOnboarded: initialSettings.isOnboarded,
+        aiApiKey: initialSettings.aiApiKey,
       })
     }
   }, [initialSettings])

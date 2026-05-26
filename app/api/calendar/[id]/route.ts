@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { updateGoogleEvent } from "@/lib/google/calendar/update-event";
 import { deleteGoogleEvent } from "@/lib/google/calendar/delete-event";
@@ -11,11 +11,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
       include: {
         accounts: {
           where: { provider: "google" },
@@ -23,7 +25,7 @@ export async function PATCH(
       },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -31,7 +33,7 @@ export async function PATCH(
     const { title, description, startTime, endTime, location, calendarId } = body;
 
     const existingEvent = await prisma.event.findUnique({
-      where: { id, userId: user.id },
+      where: { id, userId: dbUser.id },
       include: { calendar: true },
     });
 
@@ -42,7 +44,7 @@ export async function PATCH(
     // Verify calendarId if changed
     const targetCalendarId = calendarId || existingEvent.calendarId;
     const category = await prisma.calendarCategory.findUnique({
-      where: { id: targetCalendarId, userId: user.id },
+      where: { id: targetCalendarId, userId: dbUser.id },
     });
 
     if (!category) {
@@ -63,12 +65,12 @@ export async function PATCH(
     });
 
     // 2. Sync edits to Google Calendar if credentials exist
-    const hasGoogleAccount = user.accounts.length > 0;
+    const hasGoogleAccount = dbUser.accounts.length > 0;
     const isGoogleCalValid = category.googleCalId && !category.googleCalId.startsWith("local-");
 
     if (hasGoogleAccount && isGoogleCalValid && existingEvent.googleEventId) {
       try {
-        await updateGoogleEvent(user.id, category.googleCalId, existingEvent.googleEventId, {
+        await updateGoogleEvent(dbUser.id, category.googleCalId, existingEvent.googleEventId, {
           title: updatedEvent.title,
           description: updatedEvent.description,
           startTime: updatedEvent.startTime,
@@ -101,11 +103,13 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
       include: {
         accounts: {
           where: { provider: "google" },
@@ -113,12 +117,12 @@ export async function DELETE(
       },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     const existingEvent = await prisma.event.findUnique({
-      where: { id, userId: user.id },
+      where: { id, userId: dbUser.id },
       include: { calendar: true },
     });
 
@@ -127,7 +131,7 @@ export async function DELETE(
     }
 
     // 1. Delete on Google Calendar if valid
-    const hasGoogleAccount = user.accounts.length > 0;
+    const hasGoogleAccount = dbUser.accounts.length > 0;
     const isGoogleCalValid =
       existingEvent.calendar?.googleCalId &&
       !existingEvent.calendar.googleCalId.startsWith("local-");
@@ -135,7 +139,7 @@ export async function DELETE(
     if (hasGoogleAccount && isGoogleCalValid && existingEvent.googleEventId) {
       try {
         await deleteGoogleEvent(
-          user.id,
+          dbUser.id,
           existingEvent.calendar.googleCalId,
           existingEvent.googleEventId
         );

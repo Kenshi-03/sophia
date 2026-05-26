@@ -3,8 +3,8 @@ import { AIResponse, CompletionOptions } from "../types"
 import { AI_MODELS, AVAILABLE_MODELS } from "../config/models"
 
 // Initialize OpenAI client pointing to MAIA Router
-const getMaiaClient = () => {
-  const apiKey = process.env.MAIA_API_KEY || ""
+const getMaiaClient = (customApiKey?: string | null) => {
+  const apiKey = customApiKey || process.env.MAIA_API_KEY || ""
   
   return new OpenAI({
     baseURL: "https://api.maiarouter.ai/v1",
@@ -12,15 +12,19 @@ const getMaiaClient = () => {
   })
 }
 
+interface CustomCompletionOptions extends CompletionOptions {
+  customApiKey?: string | null;
+}
+
 /**
  * Generate completion using MAIA AI Gateway
  */
 export async function generateGatewayResponse(
   prompt: string,
-  options?: CompletionOptions
+  options?: CustomCompletionOptions
 ): Promise<AIResponse> {
   const startTime = Date.now()
-  const apiKey = process.env.MAIA_API_KEY || ""
+  const apiKey = options?.customApiKey || process.env.MAIA_API_KEY || ""
   
   // 1. AI Health Validation: Validate API Key presence
   if (!apiKey) {
@@ -58,7 +62,7 @@ export async function generateGatewayResponse(
   }
 
   try {
-    const client = getMaiaClient()
+    const client = getMaiaClient(options?.customApiKey)
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
 
     if (options?.systemInstruction) {

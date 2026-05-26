@@ -1,17 +1,16 @@
 import { google } from "googleapis";
 import { prisma } from "@/lib/db/prisma";
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/callback/google`
-);
-
 export function getGoogleClient(accessToken?: string) {
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/callback/google`
+  );
   if (accessToken) {
-    oauth2Client.setCredentials({ access_token: accessToken });
+    client.setCredentials({ access_token: accessToken });
   }
-  return oauth2Client;
+  return client;
 }
 
 /**

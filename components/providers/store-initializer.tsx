@@ -16,6 +16,8 @@ interface StoreInitializerProps {
   themeAccent: "lavender" | "mint" | "blue"
   autoSyncCalendar: boolean
   autoDndFocus: boolean
+  isOnboarded: boolean
+  aiApiKey: string | null
 }
 
 export default function StoreInitializer({
@@ -30,6 +32,8 @@ export default function StoreInitializer({
   themeAccent,
   autoSyncCalendar,
   autoDndFocus,
+  isOnboarded,
+  aiApiKey,
 }: StoreInitializerProps) {
   const initialized = useRef(false)
   const { setTheme } = useTheme()
@@ -48,6 +52,8 @@ export default function StoreInitializer({
       themeAccent,
       autoSyncCalendar,
       autoDndFocus,
+      isOnboarded,
+      aiApiKey,
     })
     
     initialized.current = true

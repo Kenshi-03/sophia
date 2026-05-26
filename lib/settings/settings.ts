@@ -29,6 +29,8 @@ export async function getSettings(userId: string): Promise<UserSettings> {
         themeAccent: "lavender",
         autoSyncCalendar: true,
         autoDndFocus: true,
+        isOnboarded: false,
+        aiApiKey: null,
       },
     })
   } catch (error) {
@@ -49,6 +51,8 @@ export async function getSettings(userId: string): Promise<UserSettings> {
         themeAccent: "lavender",
         autoSyncCalendar: true,
         autoDndFocus: true,
+        isOnboarded: false,
+        aiApiKey: null,
       },
     })
   }
@@ -76,6 +80,8 @@ export async function updateSettings(
       themeAccent: data.themeAccent || "lavender",
       autoSyncCalendar: data.autoSyncCalendar !== undefined ? data.autoSyncCalendar : true,
       autoDndFocus: data.autoDndFocus !== undefined ? data.autoDndFocus : true,
+      isOnboarded: data.isOnboarded !== undefined ? data.isOnboarded : false,
+      aiApiKey: data.aiApiKey !== undefined ? data.aiApiKey : null,
     },
   })
 }

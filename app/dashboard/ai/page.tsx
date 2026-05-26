@@ -79,7 +79,6 @@ export default function AiCommandCenterPage() {
         },
         body: JSON.stringify({
           query,
-          userId: "user@sophia.local", // using seed developer email as user ID
           model: settings.defaultAiModel,
           aiMode: settings.aiMode,
         }),

@@ -1,16 +1,26 @@
 import { NextResponse } from "next/server"
+import { getCurrentUser } from "@/lib/auth/session"
+import { getSettings } from "@/lib/settings/settings"
 import OpenAI from "openai"
 import { AI_MODELS } from "@/lib/ai/config/models"
 
 export async function GET() {
-  const apiKey = process.env.MAIA_API_KEY || ""
+  const user = await getCurrentUser()
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const settings = await getSettings(user.id)
+  const { decrypt } = await import("@/lib/security/encryption")
+  const decryptedApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null
+  const apiKey = decryptedApiKey || process.env.MAIA_API_KEY || ""
   
   if (!apiKey) {
     return NextResponse.json({
       status: "Missing API Key",
       healthy: false,
       latency: 0,
-      error: "MAIA_API_KEY is not defined in backend environment.",
+      error: "MAIA_API_KEY is not defined in backend environment or settings.",
     })
   }
 

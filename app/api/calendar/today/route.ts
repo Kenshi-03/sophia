@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth/auth';
+import { getCurrentUser } from '@/lib/auth/session';
 import { getUserSchedule } from '@/lib/db/queries/schedule';
-import { prisma } from '@/lib/db/prisma';
 
 export async function GET() {
   try {
-    const session = await auth();
-    const email = session?.user?.email || "user@sophia.local";
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!dbUser) {
-      return NextResponse.json([]);
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const events = await getUserSchedule(dbUser.id);
+    const events = await getUserSchedule(user.id);
     return NextResponse.json(events);
   } catch (error) {
     console.error('Failed to get today schedule:', error);

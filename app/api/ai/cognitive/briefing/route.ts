@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth/auth"
+import { getCurrentUser } from "@/lib/auth/session"
+import { getSettings } from "@/lib/settings/settings"
 import { prisma } from "@/lib/db/prisma"
 import { buildCognitiveContext } from "@/lib/ai/context/cognitive-builder"
 import { generateGatewayResponse } from "@/lib/ai/gateway/maia_gateway"
@@ -7,21 +8,9 @@ import { generateSmartRecommendations } from "@/lib/ai/recommendation/recommenda
 
 export async function GET(request: Request) {
   try {
-    const session = await auth()
-    const email = session?.user?.email || "user@sophia.local"
-
-    // 1. Fetch user from DB
-    let user = await prisma.user.findUnique({
-      where: { email },
-    })
-
-    // Fallback to first user in development mode
+    const user = await getCurrentUser()
     if (!user) {
-      user = await prisma.user.findFirst()
-    }
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     // 2. Build cognitive context metadata
@@ -79,11 +68,16 @@ Selalu kembalikan respons hanya berupa format JSON murni tanpa markdown wrapper 
       ]
     }
 
+    const settings = await getSettings(user.id)
+    const { decrypt } = await import("@/lib/security/encryption")
+    const customApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null
+
     try {
       const aiResponse = await generateGatewayResponse(userPrompt, {
         systemInstruction: systemPrompt,
         model: context.userPreferences.aiModel,
         aiMode: context.userPreferences.aiMode as any,
+        customApiKey,
       })
 
       if (aiResponse.text) {

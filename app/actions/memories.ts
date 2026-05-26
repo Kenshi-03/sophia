@@ -1,22 +1,28 @@
 "use server"
 
-import { deleteMemoryNode, updateMemoryNode } from "@/lib/db/queries/memory"
+import { getCurrentUser } from "@/lib/auth/session"
+import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 
 export async function deleteMemoryAction(memoryId: string) {
   try {
-    if (memoryId.startsWith("mock-")) {
-      console.log(`[Mock Mode] Deleted memory node ${memoryId}`)
-      revalidatePath("/dashboard/memory")
-      return { success: true, memoryId }
+    const user = await getCurrentUser()
+    if (!user) {
+      return { success: false, error: "Unauthorized" }
     }
 
-    await deleteMemoryNode(memoryId)
+    await prisma.memoryNode.delete({
+      where: { 
+        id: memoryId,
+        userId: user.id
+      }
+    })
+
     revalidatePath("/dashboard/memory")
     return { success: true, memoryId }
   } catch (error) {
-    console.warn("[Database Offline] Failed to delete memory node in DB, falling back to client-side:", error)
-    return { success: true, memoryId, fallback: true }
+    console.error("Failed to delete memory node in DB:", error)
+    return { success: false, error: "Database error" }
   }
 }
 
@@ -25,37 +31,34 @@ export async function updateMemoryAction(
   data: { content: string; category: string; tags: string[] }
 ) {
   try {
-    if (memoryId.startsWith("mock-") || memoryId.length < 5) {
-      console.log(`[Mock Mode] Updated memory node ${memoryId}`)
-      revalidatePath("/dashboard/memory")
-      return { 
-        success: true, 
-        memoryId, 
-        updatedNode: { 
-          id: memoryId, 
-          ...data, 
-          createdAt: new Date().toISOString() 
-        } 
-      }
+    const user = await getCurrentUser()
+    if (!user) {
+      return { success: false, error: "Unauthorized" }
     }
 
-    const updatedNode = await updateMemoryNode(memoryId, data)
+    const updatedNode = await prisma.memoryNode.update({
+      where: { 
+        id: memoryId,
+        userId: user.id
+      },
+      data: {
+        content: data.content,
+        category: data.category,
+        tags: data.tags,
+      }
+    })
+
     revalidatePath("/dashboard/memory")
     return {
       success: true,
       memoryId,
       updatedNode: {
         ...updatedNode,
-        createdAt: updatedNode.createdAt instanceof Date ? updatedNode.createdAt.toISOString() : updatedNode.createdAt,
+        createdAt: updatedNode.createdAt.toISOString(),
       },
     }
   } catch (error) {
-    console.warn("[Database Offline] Failed to update memory node in DB, falling back to client-side:", error)
-    return {
-      success: true,
-      memoryId,
-      updatedNode: { id: memoryId, ...data, createdAt: new Date().toISOString() },
-      fallback: true,
-    }
+    console.error("Failed to update memory node in DB:", error)
+    return { success: false, error: "Database error" }
   }
 }
