@@ -49,24 +49,14 @@ export async function POST(request: Request) {
 
     // Stage candidates in Working Memory
     await wm.updateState((state) => {
-      state.retrievalStaging.rawCandidates = relevantMemories.map((m) => ({
-        id: m.id,
-        content: m.content,
-        category: m.category,
-        sourceType: m.memoryType === 'episodic' ? 'episodic_memory' : 'semantic_memory',
-        taxonomy: m.taxonomy || 'reflection',
-        relevanceScore: m.relevanceScore || 0,
-        decayedImportance: m.decayedImportance || 0,
-        combinedScore: m.combinedScore || 0,
-        traceReason: 'MMR Selected Retrieval'
-      }));
+      state.retrievalStaging.rawCandidates = relevantMemories;
 
       state.retrievalStaging.temporalCandidates = events.map((e) => ({
         id: e.id,
         title: e.title,
-        startTime: e.startTime.toISOString(),
-        endTime: e.endTime.toISOString(),
-        category: e.calendar?.name || 'General'
+        startTime: typeof e.startTime === 'string' ? e.startTime : e.startTime.toISOString(),
+        endTime: typeof e.endTime === 'string' ? e.endTime : e.endTime.toISOString(),
+        category: e.categoryName || 'General'
       }));
 
       // Approximate token count based on staged character length

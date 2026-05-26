@@ -57,6 +57,10 @@ export interface RetrievalCandidate {
   combinedScore: number;
   traceReason: string;
   classificationTier?: ClassificationTier;
+  // Future D1.2 compatibility placeholders
+  tokenEstimate?: number;
+  temporalWeight?: number;
+  confidenceScore?: number;
 }
 
 export interface RetrievalStagingArea {

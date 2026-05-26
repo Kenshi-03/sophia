@@ -1,6 +1,6 @@
-import { MemoryNode } from '@/types/memory';
+import { RetrievalCandidate } from '../working-memory/types';
 
-export function buildMemoryContext(memories: MemoryNode[]): string {
+export function buildMemoryContext(memories: RetrievalCandidate[]): string {
   if (memories.length === 0) return 'No relevant memories retrieved.';
   
   return memories

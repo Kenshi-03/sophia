@@ -5,6 +5,37 @@ import { searchSimilarMemories } from "./similarity";
 import { calculateDecayedImportance } from "./decay-manager";
 import { getRelatedContexts } from "./relationship-engine";
 import { logger } from "../../logger";
+import { RetrievalCandidate, RetrievalSourceType } from "../working-memory/types";
+
+/**
+ * Map MemoryNode to RetrievalCandidate DTO cleanly and deterministically.
+ */
+function mapToRetrievalCandidate(
+  node: MemoryNode,
+  relevanceScore: number,
+  decayedImportance: number,
+  combinedScore: number,
+  traceReason: string = "Semantic Retrieval"
+): RetrievalCandidate {
+  let sourceType: RetrievalSourceType = "semantic_memory";
+  if (node.memoryType === "episodic") {
+    sourceType = "episodic_memory";
+  } else if (node.sourceType === "task") {
+    sourceType = "task";
+  }
+
+  return {
+    id: node.id,
+    content: node.content,
+    category: node.category,
+    sourceType,
+    taxonomy: node.taxonomy || "reflection",
+    relevanceScore,
+    decayedImportance,
+    combinedScore,
+    traceReason,
+  };
+}
 
 /**
  * Checks if the visibility level of the memory node is permitted under the requested privacy scope.
@@ -59,9 +90,9 @@ export async function retrieveRelevantMemories(
   query: string,
   characterBudget: number = 8000,
   privacyScope: string = "private"
-): Promise<MemoryNode[]> {
+): Promise<RetrievalCandidate[]> {
   try {
-    let candidateNodes: Array<MemoryNode & { combinedScore: number }> = [];
+    let candidateNodes: RetrievalCandidate[] = [];
     const embeddingMap = new Map<string, number[]>();
 
     const queryTrim = query.trim();
@@ -74,7 +105,12 @@ export async function retrieveRelevantMemories(
         take: 30,
       });
 
-      candidateNodes = allNodes.map((row) => {
+      // Filter by privacy first
+      const allowedNodes = allNodes.filter((row) =>
+        isAllowedVisibility(row.visibility || "private", privacyScope)
+      );
+
+      candidateNodes = allowedNodes.map((row) => {
         const node = {
           id: row.id,
           content: row.content,
@@ -93,10 +129,13 @@ export async function retrieveRelevantMemories(
         } as unknown as MemoryNode;
 
         const decayedImportance = calculateDecayedImportance(node);
-        return {
-          ...node,
-          combinedScore: decayedImportance,
-        };
+        return mapToRetrievalCandidate(
+          node,
+          0,
+          decayedImportance,
+          decayedImportance,
+          "Recent Memory Staging"
+        );
       });
     } else {
       // 2. Query has text. Attempt semantic similarity vector search
@@ -126,9 +165,14 @@ export async function retrieveRelevantMemories(
           }
         });
 
+        // Filter by privacy first
+        const allowedVectorResults = vectorResults.filter((res) =>
+          isAllowedVisibility(res.node.visibility || "private", privacyScope)
+        );
+
         // Map vector results and calculate combined scores
-        candidateNodes = vectorResults.map((res) => {
-          const node = res.node;
+        candidateNodes = allowedVectorResults.map((res) => {
+          const node = res.node as MemoryNode;
           const similarity = res.similarityScore;
           const decayedImportance = calculateDecayedImportance(node);
 
@@ -151,11 +195,13 @@ export async function retrieveRelevantMemories(
           const reliability = node.reliability ?? 1.0;
           const combinedScore = similarity * decayedImportance * taxonomyWeight * reliability * recencyWeight;
 
-          return {
-            ...node,
+          return mapToRetrievalCandidate(
+            node,
+            Math.round(similarity * 100),
+            decayedImportance,
             combinedScore,
-            relevanceScore: Math.round(similarity * 100),
-          };
+            "Semantic Retrieval"
+          );
         });
       } else {
         // Fallback: Word overlap keyword matching
@@ -164,9 +210,14 @@ export async function retrieveRelevantMemories(
           orderBy: { createdAt: "desc" },
         });
 
+        // Filter by privacy first
+        const allowedFallbackNodes = allNodes.filter((row) =>
+          isAllowedVisibility(row.visibility || "private", privacyScope)
+        );
+
         const queryWords = queryTrim.toLowerCase().split(/\s+/).filter((w) => w.length > 0);
 
-        candidateNodes = allNodes
+        candidateNodes = allowedFallbackNodes
           .map((row) => {
             const node = {
               id: row.id,
@@ -195,26 +246,23 @@ export async function retrieveRelevantMemories(
             const decayedImportance = calculateDecayedImportance(node);
             const combinedScore = similarity * decayedImportance * (node.reliability ?? 1.0);
 
-            return {
-              ...node,
+            return mapToRetrievalCandidate(
+              node,
+              Math.round(similarity * 100),
+              decayedImportance,
               combinedScore,
-              relevanceScore: Math.round(similarity * 100),
-            };
+              "Keyword Match Staging"
+            );
           })
           .filter((n) => n.combinedScore > 0);
       }
     }
 
-    // 3. Privacy Filter: Hiding restricted or private nodes based on requested scope
-    candidateNodes = candidateNodes.filter((node) => 
-      isAllowedVisibility(node.visibility || "private", privacyScope)
-    );
-
     // Sort by combined score descending
     candidateNodes.sort((a, b) => b.combinedScore - a.combinedScore);
 
     // 4. Maximal Marginal Relevance (MMR) Diversity Loop
-    const selectedMemories: MemoryNode[] = [];
+    const selectedMemories: RetrievalCandidate[] = [];
     const lambda = 0.65; // balance relevance and novelty
     const memoriesBudget = Math.floor(characterBudget * 0.5); // 50% allocation for memories
 
@@ -265,7 +313,7 @@ export async function retrieveRelevantMemories(
     }
 
     // 5. Context Budget Allocator: Append synthetic nodes for Behavioral Trends & Graph Relations
-    const resultContextNodes: MemoryNode[] = [...selectedMemories];
+    const resultContextNodes: RetrievalCandidate[] = [...selectedMemories];
 
     // Fetch and format relationship connections (up to 30% budget)
     const relationsBudget = Math.floor(characterBudget * 0.3);
@@ -291,11 +339,15 @@ export async function retrieveRelevantMemories(
     if (relatedContextText.length > 0) {
       resultContextNodes.push({
         id: "synthetic-relations-node",
-        category: "Semantic Relations",
         content: `Relasi Konteks Terkait:\n${relatedContextText.join("\n")}`,
-        tags: ["relations", "system-generated"],
-        createdAt: new Date(),
-      } as unknown as MemoryNode);
+        category: "Semantic Relations",
+        sourceType: "relationship_link",
+        taxonomy: "reflection",
+        relevanceScore: 100,
+        decayedImportance: 1.0,
+        combinedScore: 1.0,
+        traceReason: "System Generated Relations",
+      });
     }
 
     // Fetch and format user Cognitive Profile (up to 20% budget)
@@ -317,11 +369,15 @@ export async function retrieveRelevantMemories(
         if (profileText.length <= profileBudget) {
           resultContextNodes.push({
             id: "synthetic-profile-node",
-            category: "Behavioral Profile",
             content: profileText,
-            tags: ["behavior", "system-generated"],
-            createdAt: new Date(),
-          } as unknown as MemoryNode);
+            category: "Behavioral Profile",
+            sourceType: "user_profile",
+            taxonomy: "reflection",
+            relevanceScore: 100,
+            decayedImportance: 1.0,
+            combinedScore: 1.0,
+            traceReason: "System Generated Profile",
+          });
         }
       }
     } catch (err) {
