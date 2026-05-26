@@ -125,6 +125,22 @@ export class TokenBudgetEngine {
   }
 
   /**
+   * Calculates overlap coefficient between two texts as a fallback similarity metric.
+   */
+  public static wordOverlapSimilarity(text1: string, text2: string): number {
+    const words1 = new Set(text1.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+    const words2 = new Set(text2.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+    if (words1.size === 0 || words2.size === 0) return 0;
+    
+    let intersection = 0;
+    words1.forEach(w => {
+      if (words2.has(w)) intersection++;
+    });
+    
+    return intersection / Math.min(words1.size, words2.size);
+  }
+
+  /**
    * Immutably filters and prunes RetrievalCandidates under token pressure.
    * Enforces structural guarantees and active user intent/continuity protection.
    */
@@ -139,6 +155,12 @@ export class TokenBudgetEngine {
     prunedCount: number;
     savedTokens: number;
     pruningTrace: PruningTraceEntry[];
+    budgetPressureLevel: "low" | "medium" | "high" | "critical";
+    overflowSeverity: number;
+    duplicateCount: number;
+    densityPrunedCount: number;
+    protectedAnchorIds: string[];
+    candidateReductionRate: number;
   } {
     const pruningTrace: PruningTraceEntry[] = [];
     const continuityIds = options?.continuityCandidateIds || [];
@@ -152,23 +174,36 @@ export class TokenBudgetEngine {
       };
     });
 
-    let totalTokens = processedCandidates.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
+    const totalTokensBefore = processedCandidates.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
+    let totalTokens = totalTokensBefore;
+    const overflowSeverity = Number((totalTokensBefore / retrievalBudget).toFixed(4));
 
-    // If within budget, return directly
-    if (totalTokens <= retrievalBudget) {
-      return {
-        accepted: processedCandidates,
-        prunedCount: 0,
-        savedTokens: 0,
-        pruningTrace: []
-      };
+    // Determine initial pressure level
+    let initialPressureLevel: "low" | "medium" | "high" | "critical" = "low";
+    if (overflowSeverity > 2.0) {
+      initialPressureLevel = "critical";
+    } else if (overflowSeverity > 1.3) {
+      initialPressureLevel = "high";
+    } else if (overflowSeverity > 1.0) {
+      initialPressureLevel = "medium";
+    } else {
+      initialPressureLevel = "low";
     }
+
+    let currentPressure = initialPressureLevel;
 
     // 2. Identify protected anchors (1 profile, 1 relation, 1 semantic if present, plus continuity IDs)
     const protectedIds = new Set<string>();
     
     // Active continuity candidates are always protected
     continuityIds.forEach(id => protectedIds.add(id));
+
+    // Find and protect active session context candidates
+    processedCandidates.forEach(c => {
+      if (c.sourceType === "active_session_context") {
+        protectedIds.add(c.id);
+      }
+    });
 
     // Find first user profile
     const firstProfile = processedCandidates.find(c => c.sourceType === "user_profile");
@@ -182,51 +217,225 @@ export class TokenBudgetEngine {
     const firstSemantic = processedCandidates.find(c => c.sourceType === "semantic_memory" || c.sourceType === "episodic_memory");
     if (firstSemantic) protectedIds.add(firstSemantic.id);
 
-    // 3. Perform sorting by combinedScore ascending (lowest pruned first)
-    const candidatesSorted = [...processedCandidates].sort((a, b) => a.combinedScore - b.combinedScore);
-
-    // 4. Immutable pruning loop
-    const acceptedMap = new Map<string, RetrievalCandidate>();
-    processedCandidates.forEach(c => acceptedMap.set(c.id, c));
-
-    let prunedCount = 0;
-    let savedTokens = 0;
-
-    for (const c of candidatesSorted) {
-      // Halt immediately if we are under the budget
-      if (totalTokens <= retrievalBudget) {
-        break;
+    // Protect active roadmap/focus candidates (e.g. if category/taxonomy contains 'roadmap' or matches 'Focus')
+    processedCandidates.forEach(c => {
+      const isRoadmapOrFocus = 
+        c.category.toLowerCase().includes("roadmap") ||
+        c.taxonomy.toLowerCase().includes("roadmap") ||
+        c.category.toLowerCase() === "focus";
+      if (isRoadmapOrFocus) {
+        protectedIds.add(c.id);
       }
+    });
 
-      // Skip structural context anchors and user continuity candidates
-      if (protectedIds.has(c.id)) {
-        continue;
-      }
+    const protectedAnchorIds = Array.from(protectedIds);
 
-      // Prune candidate
-      acceptedMap.delete(c.id);
-      totalTokens -= (c.tokenEstimate || 0);
-      savedTokens += (c.tokenEstimate || 0);
-      prunedCount++;
+    // If within budget, return directly
+    if (totalTokensBefore <= retrievalBudget) {
+      return {
+        accepted: processedCandidates,
+        prunedCount: 0,
+        savedTokens: 0,
+        pruningTrace: [],
+        budgetPressureLevel: initialPressureLevel,
+        overflowSeverity,
+        duplicateCount: 0,
+        densityPrunedCount: 0,
+        protectedAnchorIds,
+        candidateReductionRate: 0
+      };
+    }
 
-      // Log to bounded trace (max 25 entries)
+    // Keep track of active candidates in a list we can filter/manipulate
+    let activeCandidates = [...processedCandidates];
+    let duplicateCount = 0;
+    let densityPrunedCount = 0;
+
+    // Helper to log pruning trace
+    const logPrune = (candidate: RetrievalCandidate, reason: string) => {
       if (pruningTrace.length < 25) {
         pruningTrace.push({
-          candidateId: c.id,
-          removedReason: "Low Combined Score",
-          tokenSaved: c.tokenEstimate || 0,
-          score: c.combinedScore
+          candidateId: candidate.id,
+          removedReason: reason,
+          tokenSaved: candidate.tokenEstimate || 0,
+          score: candidate.combinedScore
         });
+      }
+    };
+
+    // --- PIPELINE STEP 2: LOW level pruning (Score < 0.15) ---
+    // Remove non-protected candidates with combinedScore < 0.15
+    if (totalTokens > retrievalBudget) {
+      const lowValueCandidates = activeCandidates
+        .filter(c => !protectedIds.has(c.id) && c.combinedScore < 0.15)
+        .sort((a, b) => a.combinedScore - b.combinedScore); // lowest score first
+
+      for (const c of lowValueCandidates) {
+        if (totalTokens <= retrievalBudget) break;
+        activeCandidates = activeCandidates.filter(item => item.id !== c.id);
+        totalTokens -= (c.tokenEstimate || 0);
+        logPrune(c, "Low Combined Score (<0.15)");
       }
     }
 
-    const accepted = processedCandidates.filter(c => acceptedMap.has(c.id));
+    // --- PIPELINE STEP 3: MEDIUM level pruning (Duplicate & Redundancy Reduction) ---
+    if (totalTokens > retrievalBudget) {
+      if (currentPressure === "low") {
+        currentPressure = "medium";
+      }
+
+      // 3a. Duplicate text detection (word overlap > 0.70)
+      const sortedForDeduplication = [...activeCandidates].sort((a, b) => b.combinedScore - a.combinedScore);
+      const keptAfterDeduplication: RetrievalCandidate[] = [];
+
+      for (const c of sortedForDeduplication) {
+        if (protectedIds.has(c.id)) {
+          keptAfterDeduplication.push(c);
+        } else {
+          // Check if it overlaps with any already kept candidate
+          let duplicateOf: RetrievalCandidate | null = null;
+          for (const kept of keptAfterDeduplication) {
+            const overlap = TokenBudgetEngine.wordOverlapSimilarity(c.content, kept.content);
+            if (overlap > 0.70) {
+              duplicateOf = kept;
+              break;
+            }
+          }
+
+          if (duplicateOf) {
+            totalTokens -= (c.tokenEstimate || 0);
+            duplicateCount++;
+            logPrune(c, `Duplicate Overlap (>0.70) with ${duplicateOf.id}`);
+          } else {
+            keptAfterDeduplication.push(c);
+          }
+        }
+      }
+      activeCandidates = keptAfterDeduplication;
+
+      // 3b. Category & Taxonomy Density Limits (Pressure-Aware)
+      if (totalTokens > retrievalBudget) {
+        const finalAfterDensity: RetrievalCandidate[] = [];
+        const semanticCounts = new Map<string, number>();
+        const relationshipCounts = new Map<string, number>();
+        const episodicCounts = new Map<string, number>();
+
+        // Sort candidates by combinedScore descending
+        const sortedForDensity = [...activeCandidates].sort((a, b) => b.combinedScore - a.combinedScore);
+
+        for (const c of sortedForDensity) {
+          if (protectedIds.has(c.id)) {
+            finalAfterDensity.push(c);
+            // Count it towards the category density limit
+            if (c.sourceType === "semantic_memory") {
+              semanticCounts.set(c.taxonomy, (semanticCounts.get(c.taxonomy) || 0) + 1);
+            } else if (c.sourceType === "relationship_link") {
+              relationshipCounts.set(c.category, (relationshipCounts.get(c.category) || 0) + 1);
+            } else if (c.sourceType === "episodic_memory") {
+              episodicCounts.set(c.category, (episodicCounts.get(c.category) || 0) + 1);
+            }
+          } else {
+            const isHighOrCritical = currentPressure === "high" || currentPressure === "critical";
+            const semLimit = isHighOrCritical ? 2 : 3;
+            const relLimit = isHighOrCritical ? 1 : 2;
+            const epiLimit = isHighOrCritical ? 1 : 2;
+
+            let shouldPrune = false;
+            let capReason = "";
+
+            if (c.sourceType === "semantic_memory") {
+              const currentCount = semanticCounts.get(c.taxonomy) || 0;
+              if (currentCount >= semLimit) {
+                shouldPrune = true;
+                capReason = `Category Density Limit Exceeded: semantic_memory per taxonomy ${c.taxonomy} max ${semLimit}`;
+              }
+            } else if (c.sourceType === "relationship_link") {
+              const currentCount = relationshipCounts.get(c.category) || 0;
+              if (currentCount >= relLimit) {
+                shouldPrune = true;
+                capReason = `Category Density Limit Exceeded: relationship_link per category ${c.category} max ${relLimit}`;
+              }
+            } else if (c.sourceType === "episodic_memory") {
+              const currentCount = episodicCounts.get(c.category) || 0;
+              if (currentCount >= epiLimit) {
+                shouldPrune = true;
+                capReason = `Category Density Limit Exceeded: episodic_memory per category ${c.category} max ${epiLimit}`;
+              }
+            }
+
+            if (shouldPrune) {
+              totalTokens -= (c.tokenEstimate || 0);
+              densityPrunedCount++;
+              logPrune(c, capReason);
+            } else {
+              finalAfterDensity.push(c);
+              // Update counts
+              if (c.sourceType === "semantic_memory") {
+                semanticCounts.set(c.taxonomy, (semanticCounts.get(c.taxonomy) || 0) + 1);
+              } else if (c.sourceType === "relationship_link") {
+                relationshipCounts.set(c.category, (relationshipCounts.get(c.category) || 0) + 1);
+              } else if (c.sourceType === "episodic_memory") {
+                episodicCounts.set(c.category, (episodicCounts.get(c.category) || 0) + 1);
+              }
+            }
+          }
+        }
+        activeCandidates = finalAfterDensity;
+      }
+    }
+
+    // --- PIPELINE STEP 4: HIGH level pruning (Score < 0.45) ---
+    if (totalTokens > retrievalBudget) {
+      if (currentPressure === "low" || currentPressure === "medium") {
+        currentPressure = "high";
+      }
+
+      const lowValueCandidates = activeCandidates
+        .filter(c => !protectedIds.has(c.id) && c.combinedScore < 0.45)
+        .sort((a, b) => a.combinedScore - b.combinedScore);
+
+      for (const c of lowValueCandidates) {
+        if (totalTokens <= retrievalBudget) break;
+        activeCandidates = activeCandidates.filter(item => item.id !== c.id);
+        totalTokens -= (c.tokenEstimate || 0);
+        logPrune(c, "Low Combined Score (<0.45)");
+      }
+    }
+
+    // --- PIPELINE STEP 5: CRITICAL level pruning (Structural Anchors Only) ---
+    if (totalTokens > retrievalBudget) {
+      currentPressure = "critical";
+
+      const remainingNonProtected = activeCandidates
+        .filter(c => !protectedIds.has(c.id))
+        .sort((a, b) => a.combinedScore - b.combinedScore);
+
+      for (const c of remainingNonProtected) {
+        if (totalTokens <= retrievalBudget) break;
+        activeCandidates = activeCandidates.filter(item => item.id !== c.id);
+        totalTokens -= (c.tokenEstimate || 0);
+        logPrune(c, "Critical Budget Pruning (Structural Anchors Only)");
+      }
+    }
+
+    const accepted = activeCandidates.sort((a, b) => b.combinedScore - a.combinedScore);
+    const prunedCount = processedCandidates.length - accepted.length;
+    const savedTokens = totalTokensBefore - totalTokens;
+    const candidateReductionRate = processedCandidates.length > 0 
+      ? Number((prunedCount / processedCandidates.length).toFixed(4))
+      : 0;
 
     return {
       accepted,
       prunedCount,
       savedTokens,
-      pruningTrace
+      pruningTrace,
+      budgetPressureLevel: currentPressure,
+      overflowSeverity,
+      duplicateCount,
+      densityPrunedCount,
+      protectedAnchorIds,
+      candidateReductionRate
     };
   }
 
@@ -273,19 +482,9 @@ export class TokenBudgetEngine {
     // 5. Determine Warning, Overflow, and Pressure levels
     const usageRatio = finalAcceptedTokenCount / state.tokenBudget;
     
-    let budgetPressureLevel: BudgetPipelineResult["budgetPressureLevel"] = "low";
-    if (usageRatio > BUDGET_CONSTANTS.EMERGENCY_THRESHOLD) {
-      budgetPressureLevel = "critical";
-    } else if (usageRatio >= BUDGET_CONSTANTS.WARNING_THRESHOLD) {
-      budgetPressureLevel = "medium";
-    }
-
-    const overflowTriggered = usageRatio >= BUDGET_CONSTANTS.WARNING_THRESHOLD;
+    const budgetPressureLevel = pruningResult.budgetPressureLevel;
+    const overflowTriggered = usageRatio >= BUDGET_CONSTANTS.WARNING_THRESHOLD || budgetPressureLevel !== "low";
     const emergencyPruningTriggered = pruningResult.prunedCount > 0;
-
-    if (emergencyPruningTriggered && budgetPressureLevel !== "critical") {
-      budgetPressureLevel = "high";
-    }
 
     // 6. Deep copy and build safe state update
     const stateCopy = JSON.parse(JSON.stringify(state)) as WorkingMemoryState;
@@ -293,7 +492,7 @@ export class TokenBudgetEngine {
     stateCopy.currentTokenCount = finalAcceptedTokenCount;
     stateCopy.updatedAt = new Date().toISOString();
 
-    // Attach trace info to rawCandidates staging metadata (D1.2-A contract)
+    // Attach trace info to rawCandidates staging metadata (D1.2-A/D1.2-C contract)
     stateCopy.retrievalStaging.metadata = {
       budgetAllocation: {
         systemInstructions: allocations.systemInstructions,
@@ -315,8 +514,13 @@ export class TokenBudgetEngine {
         pruningCount: pruningResult.prunedCount,
         savedTokens: pruningResult.savedTokens,
         finalAcceptedTokenCount,
-        budgetingDurationMs
-      } as any
+        budgetingDurationMs,
+        overflowSeverity: pruningResult.overflowSeverity,
+        duplicateCount: pruningResult.duplicateCount,
+        densityPrunedCount: pruningResult.densityPrunedCount,
+        protectedAnchorIds: pruningResult.protectedAnchorIds,
+        candidateReductionRate: pruningResult.candidateReductionRate
+      }
     };
 
     stateCopy.retrievalStaging.traceability.discardedIds = [

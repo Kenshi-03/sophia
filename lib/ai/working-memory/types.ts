@@ -95,6 +95,11 @@ export interface RetrievalStagingArea {
       savedTokens: number;
       finalAcceptedTokenCount: number;
       budgetingDurationMs: number;
+      overflowSeverity?: number;
+      duplicateCount?: number;
+      densityPrunedCount?: number;
+      protectedAnchorIds?: string[];
+      candidateReductionRate?: number;
     };
   };
   traceability: {

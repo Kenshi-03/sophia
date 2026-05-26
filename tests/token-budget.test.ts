@@ -89,7 +89,7 @@ describe("Token Budget Engine Tests (D1.2-A)", () => {
       },
       {
         id: "semantic-1",
-        content: "Semantic memory details 1",
+        content: "Konteks utama mengenai pembelajaran deep work di pagi hari.",
         category: "Focus",
         sourceType: "semantic_memory",
         taxonomy: "reflection",
@@ -100,7 +100,7 @@ describe("Token Budget Engine Tests (D1.2-A)", () => {
       },
       {
         id: "semantic-2",
-        content: "Semantic memory details 2 which is long enough to prune",
+        content: "Laporan mingguan penyelesaian tugas divisi engineering perusahaan.",
         category: "Client",
         sourceType: "semantic_memory",
         taxonomy: "reflection",
@@ -111,7 +111,7 @@ describe("Token Budget Engine Tests (D1.2-A)", () => {
       },
       {
         id: "semantic-3",
-        content: "Semantic memory details 3 which has extremely low score",
+        content: "Catatan acak mengenai cuaca ekstrim yang terjadi di Jakarta hari ini.",
         category: "Client",
         sourceType: "semantic_memory",
         taxonomy: "reflection",
