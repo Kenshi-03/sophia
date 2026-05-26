@@ -106,6 +106,12 @@ export function getRedisClient(): any {
     return redisInstance;
   }
 
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    logger.info('Next.js production build phase detected: using volatile RedisMock instance.');
+    redisInstance = new RedisMock();
+    return redisInstance;
+  }
+
   if (process.env.MOCK_REDIS === 'true' || (globalThis as any).MOCK_REDIS === true) {
     logger.warn('Mock Redis enabled: using in-memory RedisMock instance.');
     redisInstance = new RedisMock();
@@ -145,6 +151,13 @@ export function getRedisClient(): any {
 }
 
 export function getRedisTCPConnection(): any {
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    if (!redisInstance || !(redisInstance instanceof RedisMock)) {
+      redisInstance = new RedisMock();
+    }
+    return redisInstance;
+  }
+
   if (process.env.MOCK_REDIS === 'true' || (globalThis as any).MOCK_REDIS === true) {
     if (!redisInstance || !(redisInstance instanceof RedisMock)) {
       redisInstance = new RedisMock();
