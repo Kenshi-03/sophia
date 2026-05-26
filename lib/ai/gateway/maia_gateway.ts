@@ -19,6 +19,10 @@ interface CustomCompletionOptions extends CompletionOptions {
   userId?: string;
 }
 
+type NodeError = Error & {
+  code?: string;
+};
+
 /**
  * Generate completion using MAIA AI Gateway
  */
@@ -109,11 +113,11 @@ export async function generateGatewayResponse(
       latency,
     }
   } catch (error: unknown) {
-    const err = error as { message?: string; code?: string }
-    logger.error("MAIA Gateway Error Details", err)
+    const typedError = error as NodeError
+    logger.error("MAIA Gateway Error Details", typedError)
     
     // 4. Improve Error Handling: Clean raw LiteLLM or provider internal errors
-    const rawMessage = err?.message || ""
+    const rawMessage = typedError.message || ""
     let cleanMessage = "Sistem gagal memproses instruksi AI. Mohon coba lagi beberapa saat lagi."
     
     if (
@@ -125,7 +129,7 @@ export async function generateGatewayResponse(
       cleanMessage = "Terjadi kesalahan konfigurasi model pada AI Gateway. Sistem dialihkan kembali menggunakan model default."
     } else if (rawMessage.includes("API key") || rawMessage.includes("Unauthorized")) {
       cleanMessage = "Akses ditolak oleh AI Gateway. Harap periksa kevalidan MAIA API Key Anda."
-    } else if (error?.code === "ENOTFOUND" || rawMessage.includes("fetch failed")) {
+    } else if (typedError.code === "ENOTFOUND" || rawMessage.includes("fetch failed")) {
       cleanMessage = "Gagal menghubungi AI Gateway. Pastikan server memiliki koneksi internet yang stabil."
     }
 
