@@ -1,13 +1,28 @@
 import { startWorkers } from '../lib/queue/worker';
 import { logger } from '../lib/logger';
+import { cleanupStaleExecutions } from '../lib/ai/working-memory/cleanup';
 
 logger.info('Starting SOPHIA Background Worker Process...');
 
 const manager = startWorkers();
 
+// Run periodic stale Working Memory recovery worker every 5 minutes
+const cleanupInterval = setInterval(async () => {
+  try {
+    logger.debug('Periodic Worker Action: scanning for stale working memory logs...');
+    const count = await cleanupStaleExecutions();
+    if (count > 0) {
+      logger.info(`Periodic Worker Action: recovered and cleaned ${count} stale working memory executions.`);
+    }
+  } catch (err) {
+    logger.error('Failed running background stale execution recovery', err);
+  }
+}, 5 * 60 * 1000);
+
 // Graceful Shutdown
 const handleShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Shutting down worker process gracefully...`);
+  clearInterval(cleanupInterval);
   try {
     await manager.close();
     logger.info('Worker process terminated cleanly.');

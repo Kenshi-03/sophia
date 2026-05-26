@@ -6,20 +6,37 @@ import { assembleAgentContext } from '@/lib/ai/orchestration/context-manager';
 import { generateAiResponse } from '@/lib/ai/orchestration/response-generator';
 import { retrieveRelevantMemories } from '@/lib/ai/memory/retrieve-memory';
 import { getUserSchedule } from '@/lib/db/queries/schedule';
-
 import { decrypt } from '@/lib/security/encryption';
+import prisma from '@/lib/db/prisma';
+import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/store';
+import { traceWorkingMemory } from '@/lib/ai/working-memory/observability';
 
 export async function POST(request: Request) {
-  try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-    const { query, model, aiMode } = await request.json();
-    if (!query) {
-      return NextResponse.json({ error: 'Query is required.' }, { status: 400 });
-    }
+  const { query, model, aiMode, sessionId } = await request.json();
+  if (!query) {
+    return NextResponse.json({ error: 'Query is required.' }, { status: 400 });
+  }
+
+  // Initialize Working Memory Core
+  const wm = new WorkingMemory(user.id, sessionId || 'chat_session_default', query, {
+    executionSource: 'chat_api'
+  });
+  await wm.save();
+
+  const startTime = Date.now();
+  let promptTokens = 0;
+  let completionTokens = 0;
+
+  try {
+    // 1. Transition to 'retrieval_staging'
+    await wm.updateState((state) => {
+      state.currentStage = 'retrieval_staging';
+    });
 
     // AI agent routing
     const agentType = routeUserQuery(query);
@@ -27,30 +44,108 @@ export async function POST(request: Request) {
     // Retrieve contextual memories
     const relevantMemories = await retrieveRelevantMemories(user.id, query);
 
-    // Fetch user schedule/events (resolves empty context bug)
+    // Fetch user schedule/events
     const events = await getUserSchedule(user.id);
+
+    // Stage candidates in Working Memory
+    await wm.updateState((state) => {
+      state.retrievalStaging.rawCandidates = relevantMemories.map((m) => ({
+        id: m.id,
+        content: m.content,
+        category: m.category,
+        sourceType: m.memoryType === 'episodic' ? 'episodic_memory' : 'semantic_memory',
+        taxonomy: m.taxonomy || 'reflection',
+        relevanceScore: m.relevanceScore || 0,
+        decayedImportance: m.decayedImportance || 0,
+        combinedScore: m.combinedScore || 0,
+        traceReason: 'MMR Selected Retrieval'
+      }));
+
+      state.retrievalStaging.temporalCandidates = events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        startTime: e.startTime.toISOString(),
+        endTime: e.endTime.toISOString(),
+        category: e.calendar?.name || 'General'
+      }));
+
+      // Approximate token count based on staged character length
+      let totalChars = query.length;
+      relevantMemories.forEach(m => totalChars += m.content.length);
+      events.forEach(e => totalChars += e.title.length + (e.description?.length || 0));
+      state.currentTokenCount = estimateTokensFromChars(totalChars);
+    });
 
     // Assemble LLM context payload
     const context = assembleAgentContext(query, relevantMemories, events);
+
+    // 2. Transition to 'reasoning'
+    await wm.updateState((state) => {
+      state.currentStage = 'reasoning';
+      state.reasoningState.scratchpad = 'Staging completed. Requesting response generation from Gemini Gateway...\n';
+    });
 
     // Retrieve user settings for API Key & Model defaults
     const settings = await getSettings(user.id);
     const customApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null;
 
-    // Generate output utilizing MAIA gateway and passing model/mode parameters
+    // Generate output utilizing MAIA gateway
     const response = await generateAiResponse(query, context, { 
       model: model || settings.aiModel, 
       aiMode: aiMode || (settings.aiMode as any), 
       customApiKey 
     });
 
+    // Fetch exact token count from the tracked AI usage table
+    const latestUsage = await prisma.aiUsage.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (latestUsage && (Date.now() - latestUsage.createdAt.getTime() < 15000)) {
+      promptTokens = latestUsage.promptTokens;
+      completionTokens = latestUsage.completionTokens;
+    }
+
+    // 3. Transition to 'completed'
+    await wm.updateState((state) => {
+      state.currentStage = 'completed';
+      state.lifecycleStatus = 'completed';
+      state.reasoningState.draftResponse = response;
+    });
+
+    const latency = Date.now() - startTime;
+
+    // Trace diagnostics
+    traceWorkingMemory(wm);
+
+    // Save logs to PostgreSQL
+    await wm.saveToDb(latency, promptTokens, completionTokens);
+
+    // Cleanup ephemeral Redis cache
+    await wm.delete('completed');
+
     return NextResponse.json({
       query,
       agentType,
       response,
+      executionId: wm.getState().executionId
     });
+
   } catch (error) {
     console.error('AI chat endpoint error:', error);
+    
+    // Transition to failed
+    await wm.updateState((state) => {
+      state.currentStage = 'failed';
+      state.lifecycleStatus = 'completed';
+      state.cleanupReason = 'failed';
+    });
+
+    const latency = Date.now() - startTime;
+    await wm.saveToDb(latency, 0, 0);
+    await wm.delete('failed');
+
     return NextResponse.json({ error: 'Internal system error.' }, { status: 500 });
   }
 }

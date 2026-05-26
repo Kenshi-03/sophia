@@ -1,5 +1,6 @@
 import Redis, { RedisOptions } from 'ioredis';
 import { logger } from './logger';
+import { RedisMock } from './redis-mock';
 
 const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
@@ -10,17 +11,25 @@ const getRedisOptions = (): RedisOptions => {
   };
 };
 
-let redisInstance: Redis | null = null;
+let redisInstance: any = null;
 
 export function getRedisClient(): Redis {
-  if (!redisInstance) {
+  if (process.env.MOCK_REDIS === 'true' || (globalThis as any).MOCK_REDIS === true) {
+    if (!redisInstance || !(redisInstance instanceof RedisMock)) {
+      logger.warn('Mock Redis enabled: using in-memory RedisMock instance.');
+      redisInstance = new RedisMock();
+    }
+    return redisInstance as unknown as Redis;
+  }
+
+  if (!redisInstance || redisInstance instanceof RedisMock) {
     logger.info('Initializing shared Redis client instance', { url: redisUrl });
     redisInstance = new Redis(redisUrl, getRedisOptions());
-    redisInstance.on('error', (err) => {
+    redisInstance.on('error', (err: any) => {
       logger.error('Redis client error', err);
     });
   }
-  return redisInstance;
+  return redisInstance as Redis;
 }
 
 export const CACHE_PREFIX = 'v1:';

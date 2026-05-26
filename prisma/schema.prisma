@@ -28,6 +28,7 @@ model User {
   cognitiveProfile     CognitiveProfile?
   memoryRelations      MemoryRelation[]
   dailyCognitiveStates DailyCognitiveState[]
+  workingMemoryLogs    WorkingMemoryLog[]
 
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -277,4 +278,40 @@ model DailyCognitiveState {
 
   @@unique([userId, date])
   @@index([userId])
+}
+
+model WorkingMemoryLog {
+  id                      String   @id @default(cuid())
+  executionId             String   @unique
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId               String
+  finalStage              String   // initialized, retrieval_staging, reasoning, reflection, completed, failed
+  userInputLength         Int      // length of user input characters
+  tokenBudget             Int
+  promptTokens            Int      @default(0)
+  completionTokens        Int      @default(0)
+  totalTokens             Int      @default(0)
+  latencyMs               Int      @default(0)
+  schemaVersion           Int      @default(1)
+  
+  // Retry Semantics
+  retrievalRetryCount     Int      @default(0)
+  reflectionRetryCount    Int      @default(0)
+  gatewayRetryCount       Int      @default(0)
+  orchestrationRetryCount Int      @default(0)
+  
+  confidenceScore         Float    @default(1.0)
+  reflectionStatus        String   @default("none") // e.g. success, corrected, bypassed
+  
+  // Observability & explainable retrieval traces (no raw contents)
+  retrievalTrace          Json?    // e.g. { selected: [{ id, category, score, type }], discarded: [{ id, category, score, reason }] }
+  
+  executionSource         String   // chat_api, worker_job, etc.
+  cleanupReason           String   // completed, failed, stale_timeout, etc.
+  createdAt               DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([createdAt])
 }
