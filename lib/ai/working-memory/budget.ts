@@ -1,5 +1,6 @@
 import { RetrievalCandidate, WorkingMemoryState } from "./types";
 import { logger } from "../../logger";
+import { ContextDiversityEngine } from "./diversity";
 
 export interface PruningTraceEntry {
   candidateId: string;
@@ -458,6 +459,10 @@ export class TokenBudgetEngine {
     // Get current rawCandidates
     const rawCandidates = state.retrievalStaging.rawCandidates || [];
     const candidateCountBefore = rawCandidates.length;
+    const totalTokensBefore = rawCandidates.reduce((sum, c) => {
+      const estimate = c.tokenEstimate !== undefined ? c.tokenEstimate : TokenBudgetEngine.estimateTokenCount(c.content);
+      return sum + estimate;
+    }, 0);
 
     // 3. Execute Pruning on Retrieval Candidates using allocation budget
     const pruningResult = TokenBudgetEngine.pruneRetrievalCandidates(
@@ -465,8 +470,18 @@ export class TokenBudgetEngine {
       allocations.retrievalStaging
     );
 
-    // 4. Calculate Final Totals
-    const retrievalTokenCount = pruningResult.accepted.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
+    // 3.5 Execute Diversity Balancing on pruned Candidates
+    const balancingResult = ContextDiversityEngine.balanceCandidates(
+      pruningResult.accepted,
+      {
+        sessionId: state.sessionId,
+        currentStage: state.currentStage,
+        protectedAnchorIds: pruningResult.protectedAnchorIds
+      }
+    );
+
+    // 4. Calculate Final Totals using balanced candidates
+    const retrievalTokenCount = balancingResult.balanced.reduce((sum, c) => sum + (c.tokenEstimate || 0), 0);
     
     // Add free token buffer (500 tokens)
     const finalAcceptedTokenCount = 
@@ -488,7 +503,7 @@ export class TokenBudgetEngine {
 
     // 6. Deep copy and build safe state update
     const stateCopy = JSON.parse(JSON.stringify(state)) as WorkingMemoryState;
-    stateCopy.retrievalStaging.rawCandidates = pruningResult.accepted;
+    stateCopy.retrievalStaging.rawCandidates = balancingResult.balanced;
     stateCopy.currentTokenCount = finalAcceptedTokenCount;
     stateCopy.updatedAt = new Date().toISOString();
 
@@ -510,7 +525,7 @@ export class TokenBudgetEngine {
         overflowTriggered,
         emergencyPruningTriggered,
         candidateCountBefore,
-        candidateCountAfter: pruningResult.accepted.length,
+        candidateCountAfter: balancingResult.balanced.length,
         pruningCount: pruningResult.prunedCount,
         savedTokens: pruningResult.savedTokens,
         finalAcceptedTokenCount,
@@ -520,12 +535,19 @@ export class TokenBudgetEngine {
         densityPrunedCount: pruningResult.densityPrunedCount,
         protectedAnchorIds: pruningResult.protectedAnchorIds,
         candidateReductionRate: pruningResult.candidateReductionRate
-      }
+      },
+      diversityMetrics: balancingResult.metrics
     };
+
+    const balancedIds = new Set(balancingResult.balanced.map(c => c.id));
+    const diversityDiscardedIds = pruningResult.accepted
+      .filter(c => !balancedIds.has(c.id))
+      .map(c => c.id);
 
     stateCopy.retrievalStaging.traceability.discardedIds = [
       ...stateCopy.retrievalStaging.traceability.discardedIds,
-      ...pruningResult.pruningTrace.map(entry => entry.candidateId)
+      ...pruningResult.pruningTrace.map(entry => entry.candidateId),
+      ...diversityDiscardedIds
     ];
 
     return {
@@ -535,9 +557,9 @@ export class TokenBudgetEngine {
       overflowTriggered,
       emergencyPruningTriggered,
       candidateCountBefore,
-      candidateCountAfter: pruningResult.accepted.length,
-      pruningCount: pruningResult.prunedCount,
-      savedTokens: pruningResult.savedTokens,
+      candidateCountAfter: balancingResult.balanced.length,
+      pruningCount: pruningResult.prunedCount + diversityDiscardedIds.length,
+      savedTokens: totalTokensBefore - retrievalTokenCount,
       finalAcceptedTokenCount,
       budgetingDurationMs,
       pruningTrace: pruningResult.pruningTrace

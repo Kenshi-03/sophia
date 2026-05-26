@@ -76,6 +76,17 @@ export interface RetrievalCandidate {
   };
 }
 
+export interface DiversityMetrics {
+  taxonomyDistribution: Record<string, number>;
+  sourceDistribution: Record<string, number>;
+  temporalInfluence: Record<string, number>;
+  diversityActions: string[];
+  echoPreventionActions: string[];
+  repeatedClusterReductionCount: number;
+  freshnessWeightingContribution: Record<string, number>;
+  continuityProtectionSkips: string[];
+}
+
 export interface RetrievalStagingArea {
   rawCandidates: RetrievalCandidate[];
   semanticCandidates: RetrievalCandidate[];
@@ -101,6 +112,7 @@ export interface RetrievalStagingArea {
       protectedAnchorIds?: string[];
       candidateReductionRate?: number;
     };
+    diversityMetrics?: DiversityMetrics;
   };
   traceability: {
     filtersApplied: string[];
