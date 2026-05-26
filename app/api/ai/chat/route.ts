@@ -10,6 +10,7 @@ import { decrypt } from '@/lib/security/encryption';
 import prisma from '@/lib/db/prisma';
 import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/store';
 import { traceWorkingMemory } from '@/lib/ai/working-memory/observability';
+import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -59,15 +60,18 @@ export async function POST(request: Request) {
         category: e.categoryName || 'General'
       }));
 
-      // Approximate token count based on staged character length
-      let totalChars = query.length;
-      relevantMemories.forEach(m => totalChars += m.content.length);
-      events.forEach(e => totalChars += e.title.length + (e.description?.length || 0));
-      state.currentTokenCount = estimateTokensFromChars(totalChars);
+      // Run Token Budget Engine safe pipeline to enforce budgeting, warning levels, and emergency pruning
+      const budgetResult = TokenBudgetEngine.buildSafePipeline(state);
+      
+      // Update state with pruned/accepted candidates and budgeting metrics
+      state.retrievalStaging.rawCandidates = budgetResult.state.retrievalStaging.rawCandidates;
+      state.retrievalStaging.metadata = budgetResult.state.retrievalStaging.metadata;
+      state.retrievalStaging.traceability.discardedIds = budgetResult.state.retrievalStaging.traceability.discardedIds;
+      state.currentTokenCount = budgetResult.state.currentTokenCount;
     });
 
-    // Assemble LLM context payload
-    const context = assembleAgentContext(query, relevantMemories, events);
+    // Assemble LLM context payload using the budgeted candidates
+    const context = assembleAgentContext(query, wm.getState().retrievalStaging.rawCandidates, events);
 
     // 2. Transition to 'reasoning'
     await wm.updateState((state) => {

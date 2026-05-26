@@ -71,6 +71,18 @@ export interface RetrievalStagingArea {
   metadata: {
     budgetAllocation: Record<string, number>;
     totalRetrievedCount: number;
+    budgetingMetrics?: {
+      budgetVersion: string;
+      budgetPressureLevel: "low" | "medium" | "high" | "critical";
+      overflowTriggered: boolean;
+      emergencyPruningTriggered: boolean;
+      candidateCountBefore: number;
+      candidateCountAfter: number;
+      pruningCount: number;
+      savedTokens: number;
+      finalAcceptedTokenCount: number;
+      budgetingDurationMs: number;
+    };
   };
   traceability: {
     filtersApplied: string[];

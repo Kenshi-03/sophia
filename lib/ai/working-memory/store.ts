@@ -325,10 +325,14 @@ export class WorkingMemory {
 
       const discarded = this.state.retrievalStaging.traceability.discardedIds;
 
+      // Extract dynamic budgeting metrics from state metadata
+      const budgetingMetrics = (this.state.retrievalStaging.metadata as any).budgetingMetrics || null;
+
       const retrievalTrace = {
         selected,
         discarded,
-        totalRetrievedCount: this.state.retrievalStaging.metadata.totalRetrievedCount
+        totalRetrievedCount: this.state.retrievalStaging.metadata.totalRetrievedCount,
+        budgetingMetrics
       };
 
       await prisma.workingMemoryLog.create({
