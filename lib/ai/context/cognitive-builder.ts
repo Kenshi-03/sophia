@@ -258,7 +258,7 @@ export async function buildCognitiveContext(
   }
 
   return {
-    userName: user?.name || "Sophia Dev",
+    userName: user?.name || "SOPHIA Dev User",
     userPreferences: {
       aiModel: settings.aiModel,
       aiMode: settings.aiMode,

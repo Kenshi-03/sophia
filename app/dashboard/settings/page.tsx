@@ -39,7 +39,7 @@ export default async function SettingsPage() {
     ? {
         ...initialSettings,
         aiApiKey: initialSettings.aiApiKey ? "••••••••" : null,
-        userName: (user.name || "Sophia Dev"),
+        userName: (user.name || "SOPHIA Dev User"),
         createdAt: initialSettings.createdAt?.toISOString(),
         updatedAt: initialSettings.updatedAt?.toISOString(),
       }

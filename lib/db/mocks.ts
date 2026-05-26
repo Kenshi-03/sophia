@@ -3,7 +3,7 @@ import { CalendarEvent } from "@/types/calendar"
 import { MemoryNode } from "@/types/memory"
 
 export const mockUser = {
-  name: "Sophia Dev",
+  name: "SOPHIA Dev User",
   email: "user@sophia.local",
 }
 
@@ -44,7 +44,7 @@ export const mockEvents: CalendarEvent[] = [
   },
   {
     id: "mock-event-2",
-    title: "SOPHIA Dev Sprint",
+    title: "SOPHIA Dev User Sprint",
     description: "Implement backend API route definitions and next-auth credentials.",
     startTime: new Date(new Date().setHours(14, 0, 0, 0)),
     endTime: new Date(new Date().setHours(16, 0, 0, 0)),

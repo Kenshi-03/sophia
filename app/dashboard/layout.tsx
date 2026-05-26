@@ -19,7 +19,7 @@ export default async function DashboardLayout({
   }
 
   const settingsData = {
-    userName: user.name || "Sophia Dev",
+    userName: user.name || "SOPHIA Dev User",
     theme: settings.theme,
     aiModel: settings.aiModel,
     aiMode: (settings.aiMode as "focus" | "creative" | "balanced") || "balanced",

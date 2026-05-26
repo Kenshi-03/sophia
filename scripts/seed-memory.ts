@@ -865,7 +865,7 @@ async function main() {
     update: {},
     create: {
       email: "user@sophia.local",
-      name: "Sophia Dev",
+      name: "SOPHIA Dev User",
     },
   });
   console.log(`  ✓ User: ${user.name} (${user.email}) [${user.id}]`);

@@ -94,11 +94,11 @@ async function main() {
 
   // Create a default developer user
   const user = await prisma.user.upsert({
-    where: { email: "user@sophia.local" },
+    where: { email: "bahrulgaming1@gmail.com" },
     update: {},
     create: {
-      email: "user@sophia.local",
-      name: "Sophia Dev",
+      email: "bahrulgaming1@gmail.com",
+      name: "Bahrul Taufiq",
     },
   });
 
@@ -186,7 +186,7 @@ async function main() {
       calendarId: categoriesMap["academic"],
     },
     {
-      title: "SOPHIA Dev Sprint",
+      title: "SOPHIA Dev User Sprint",
       description: "Implement backend API route definitions and next-auth credentials.",
       startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0),
       endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 16, 0),

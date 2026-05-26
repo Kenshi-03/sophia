@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import { getRedisClient, makeCacheKey } from '../redis';
+import { getRedisTCPConnection, makeCacheKey } from '../redis';
 import { logger } from '../logger';
 import { syncUserCalendar } from '../google/calendar/sync';
 import { generateCognitiveBriefing } from '../ai/cognitive/briefing-generator';
@@ -12,7 +12,7 @@ import { createMemoryNode } from '../db/queries/memory';
 import { memoryQueue } from './client';
 import crypto from 'crypto';
 
-const redisConnection = getRedisClient();
+const redisConnection = getRedisTCPConnection();
 
 export function startWorkers() {
   logger.info('Starting BullMQ Workers...');

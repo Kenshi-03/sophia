@@ -1,8 +1,8 @@
 import { Queue } from 'bullmq';
-import { getRedisClient } from '../redis';
+import { getRedisTCPConnection } from '../redis';
 import { logger } from '../logger';
 
-const redisConnection = getRedisClient();
+const redisConnection = getRedisTCPConnection();
 
 const defaultJobOptions = {
   attempts: 3,

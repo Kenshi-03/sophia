@@ -19,7 +19,7 @@ interface CalendarState {
 export const useCalendarStore = create<CalendarState>((set) => ({
   events: [
     { id: '1', title: 'Morning Lecture Prep', startTime: '09:00 AM', endTime: '10:30 AM' },
-    { id: '2', title: 'SOPHIA Dev Sprint', startTime: '02:00 PM', endTime: '04:00 PM' },
+    { id: '2', title: 'SOPHIA Dev User Sprint', startTime: '02:00 PM', endTime: '04:00 PM' },
   ],
   isSyncing: false,
   setEvents: (events) => set({ events }),

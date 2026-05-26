@@ -35,7 +35,7 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>()((set) => ({
-  userName: "Sophia Dev",
+  userName: "SOPHIA Dev User",
   defaultAiModel: AI_MODELS.FAST,
   aiModel: AI_MODELS.FAST,
   aiMode: "balanced",

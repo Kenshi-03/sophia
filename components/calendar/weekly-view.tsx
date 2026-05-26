@@ -28,7 +28,7 @@ export default function WeeklyView() {
       </div>
 
       <div className="space-y-3 pt-4 border-t border-zinc-50 dark:border-zinc-800/50">
-        <EventCard title="SOPHIA Dev Sprint" time="02:00 PM" duration="120m" location="Localhost" color="indigo" />
+        <EventCard title="SOPHIA Dev User Sprint" time="02:00 PM" duration="120m" location="Localhost" color="indigo" />
       </div>
     </div>
   )

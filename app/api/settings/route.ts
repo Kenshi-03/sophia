@@ -19,7 +19,7 @@ export async function GET() {
     return NextResponse.json({
       ...settings,
       aiApiKey: settings.aiApiKey ? "••••••••" : null,
-      userName: dbUser.name || "Sophia Dev"
+      userName: dbUser.name || "SOPHIA Dev User"
     })
   } catch (error: any) {
     console.error("GET /api/settings error:", error)
@@ -112,7 +112,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ...settings,
       aiApiKey: settings.aiApiKey ? "••••••••" : null,
-      userName: updatedUser?.name || "Sophia Dev"
+      userName: updatedUser?.name || "SOPHIA Dev User"
     })
   } catch (error: any) {
     console.error("POST /api/settings error:", error)

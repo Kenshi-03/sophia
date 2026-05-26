@@ -133,4 +133,8 @@ export class RedisMock {
     this.store.clear();
     this.activeSet.clear();
   }
+
+  async ping() {
+    return 'PONG';
+  }
 }

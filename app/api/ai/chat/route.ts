@@ -9,7 +9,7 @@ import { getUserSchedule } from '@/lib/db/queries/schedule';
 import { decrypt } from '@/lib/security/encryption';
 import prisma from '@/lib/db/prisma';
 import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/store';
-import { traceWorkingMemory } from '@/lib/ai/working-memory/observability';
+import { traceWorkingMemory, logDevCognitionObservability } from '@/lib/ai/working-memory/observability';
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
 
@@ -89,6 +89,23 @@ export async function POST(request: Request) {
         protectedAnchorIds: (activeState.retrievalStaging.metadata as any).budgetingMetrics?.protectedAnchorIds
       }
     );
+
+    // Call Dev Cognition Observability Logging if enabled
+    if (process.env.NODE_ENV === 'development' && process.env.DEV_COGNITION_MODE === 'true') {
+      const budgetMetrics = (activeState.retrievalStaging.metadata as any).budgetingMetrics;
+      const assembledCtx = (activeState.retrievalStaging.metadata as any).assembledContext;
+      
+      logDevCognitionObservability("RETRIEVAL & PRUNING", {
+        candidatesBefore: relevantMemories,
+        pruningResult: budgetMetrics,
+      });
+
+      if (assembledCtx) {
+        logDevCognitionObservability("FINAL ASSEMBLY", {
+          assembledContext: assembledCtx,
+        });
+      }
+    }
 
     // 2. Transition to 'reasoning'
     await wm.updateState((state) => {
