@@ -1,6 +1,6 @@
-import { POST } from '@/app/api/ai/chat/route';
+import { POST } from '../../app/api/ai/chat/route';
 
-jest.mock('@/lib/auth/session', () => ({
+jest.mock('../../lib/auth/session', () => ({
   getCurrentUser: jest.fn().mockResolvedValue({ id: 'test-user-id', email: 'user@sophia.local' }),
 }));
 
