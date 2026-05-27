@@ -1703,80 +1703,161 @@ async function main() {
     failureCount++;
   }
 
-  // ─── SECTION 7: VALIDATION QUERIES ───
-  console.log("\n  [Section 7: Query-Aware Intent & Active Focus Validation]");
+  // ─── SECTION 7: VALIDATION QUERIES (SECTION 9 IN SPEC) ───
+  console.log("\n  [Section 7: Query-Aware Intent & Active Focus Validation (Section 9 Spec)]");
 
-  // Query 1: "Apa fokus roadmap aktif saat ini?"
-  console.log('    Query 1: "Apa fokus roadmap aktif saat ini?"');
+  // Query 1: "Bagaimana roadmap database indexing?"
+  console.log('    Query 1: "Bagaimana roadmap database indexing?"');
   const resQuery1 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
     sessionId: "chat_session_default",
-    query: "Apa fokus roadmap aktif saat ini?",
+    query: "Bagaimana roadmap database indexing?",
     activeRoadmapPhase: "phase-d",
-    activeSprint: "sprint-1",
-    activeContinuityCluster: "d13-validation"
+    activeSprint: "sprint-1"
   });
-  const top1 = resQuery1.candidates[0];
-  const containsRoadmapHook = top1.content.toLowerCase().includes("retrieval arbitration hooks") || top1.id.includes("seed-dup-01") || top1.id.includes("seed-cont-01");
-  console.log(`      - Top retrieved memory: [${top1.id}] "${top1.content.substring(0, 60)}..."`);
-  console.log(`      - Expected active roadmap phase D1.3 dominance: ${containsRoadmapHook ? "✓ YES" : "❌ NO"}`);
-  if (containsRoadmapHook) {
-    console.log("      - Focus query validation: ✓ PASS");
+  
+  const selectedQ1 = resQuery1.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top1 = selectedQ1[0];
+  const trace1 = top1?.arbitrationTrace;
+
+  console.log(`      - Dominant intent: ${trace1?.dominantIntent}`);
+  console.log(`      - Technical specificity score: ${trace1?.technicalSpecificityScore}`);
+  console.log(`      - Roadmap constraint applied: ${trace1?.roadmapConstraintApplied}`);
+  console.log(`      - Top retrieved memory: [${top1?.id}] category: [${top1?.category}] "${top1?.content.substring(0, 60)}..."`);
+
+  const q1DominantCorrect = trace1?.dominantIntent === "database";
+  const q1ConstraintCorrect = trace1?.roadmapConstraintApplied === true;
+  const q1RetrievalCorrect = top1?.category === "Postgres" || top1?.category === "Vector";
+
+  console.log(`      - Expected database dominant intent: ${q1DominantCorrect ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Expected roadmap constraint applied: ${q1ConstraintCorrect ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Expected database/vector candidate dominates: ${q1RetrievalCorrect ? "✓ YES" : "❌ NO"}`);
+
+  if (q1DominantCorrect && q1ConstraintCorrect && q1RetrievalCorrect) {
+    console.log("      - Focus query 1 validation: ✓ PASS");
   } else {
-    console.log("      - Focus query validation: ❌ FAIL (Stale D1.2 or unrelated memories dominated active focus query)");
+    console.log("      - Focus query 1 validation: ❌ FAIL (Database indexing/infra failed to dominate roadmap)");
     failureCount++;
   }
 
-  // Query 2: "Apa tujuan utama D1.3?"
-  console.log('    Query 2: "Apa tujuan utama D1.3?"');
+  // Query 2: "Apa roadmap aktif D1.3?"
+  console.log('\n    Query 2: "Apa roadmap aktif D1.3?"');
   const resQuery2 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
     sessionId: "chat_session_default",
-    query: "Apa tujuan utama D1.3?",
+    query: "Apa roadmap aktif D1.3?",
     activeRoadmapPhase: "phase-d",
     activeSprint: "sprint-1",
     activeContinuityCluster: "d13-validation"
   });
-  const top2 = resQuery2.candidates[0];
-  // Verify that it retrieved roadmap-aligned or active continuity memories (e.g. from seed-cont or seed-dup)
-  const containsTujuan = top2.content.toLowerCase().includes("scenarios") || top2.content.toLowerCase().includes("testing d1.3") || top2.id.startsWith("seed-cont-") || top2.id.startsWith("seed-dup-");
-  console.log(`      - Top retrieved memory: [${top2.id}] "${top2.content.substring(0, 60)}..."`);
-  console.log(`      - Expected active phase continuity dominance: ${containsTujuan ? "✓ YES" : "❌ NO"}`);
-  if (containsTujuan) {
-    console.log("      - Intent usefulness query validation: ✓ PASS");
+
+  const selectedQ2 = resQuery2.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top2 = selectedQ2[0];
+  const trace2 = top2?.arbitrationTrace;
+
+  console.log(`      - Dominant intent: ${trace2?.dominantIntent}`);
+  console.log(`      - Top retrieved memory: [${top2?.id}] category: [${top2?.category}] "${top2?.content.substring(0, 60)}..."`);
+
+  const q2DominantCorrect = trace2?.dominantIntent === "roadmap";
+  const q2RetrievalCorrect = top2?.id.startsWith("seed-cont-") || top2?.id.startsWith("seed-dup-");
+
+  console.log(`      - Expected roadmap dominant intent: ${q2DominantCorrect ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Expected roadmap continuity dominates: ${q2RetrievalCorrect ? "✓ YES" : "❌ NO"}`);
+
+  if (q2DominantCorrect && q2RetrievalCorrect) {
+    console.log("      - Focus query 2 validation: ✓ PASS");
   } else {
-    console.log("      - Intent usefulness query validation: ❌ FAIL (Query did not retrieve roadmap-aligned or active sprint chain memories)");
+    console.log("      - Focus query 2 validation: ❌ FAIL (Roadmap continuity failed to dominate)");
     failureCount++;
   }
 
-  // Query 3: "Bagaimana duplicate suppression bekerja?"
-  console.log('    Query 3: "Bagaimana duplicate suppression bekerja?"');
+  // Query 3: "Bagaimana telemetry replay bekerja?"
+  console.log('\n    Query 3: "Bagaimana telemetry replay bekerja?"');
   const resQuery3 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
     sessionId: "chat_session_default",
-    query: "Bagaimana duplicate suppression bekerja?",
-    activeRoadmapPhase: "phase-d",
-    activeSprint: "sprint-1",
-    activeContinuityCluster: "d13-validation"
+    query: "Bagaimana telemetry replay bekerja?"
   });
-  const top3 = resQuery3.candidates[0];
-  console.log(`      - Top retrieved memory: [${top3.id}] "${top3.content.substring(0, 60)}..."`);
-  console.log(`      - Continuity-aware retrieval stable: ✓ YES`);
 
-  // Query 4: Replay identical queries 5-10 times
-  console.log('    Query 4: Replay identical queries 5-10 times');
+  const selectedQ3 = resQuery3.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top3 = selectedQ3[0];
+  const trace3 = top3?.arbitrationTrace;
+
+  console.log(`      - Dominant intent: ${trace3?.dominantIntent}`);
+  console.log(`      - Top retrieved memory: [${top3?.id}] category: [${top3?.category}] "${top3?.content.substring(0, 60)}..."`);
+
+  const q3DominantCorrect = trace3?.dominantIntent === "observability";
+  const q3RetrievalCorrect = top3?.category === "Telemetry";
+
+  console.log(`      - Expected observability dominant intent: ${q3DominantCorrect ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Expected telemetry memory dominates: ${q3RetrievalCorrect ? "✓ YES" : "❌ NO"}`);
+
+  if (q3DominantCorrect && q3RetrievalCorrect) {
+    console.log("      - Focus query 3 validation: ✓ PASS");
+  } else {
+    console.log("      - Focus query 3 validation: ❌ FAIL (Observability failed to dominate)");
+    failureCount++;
+  }
+
+  // Query 4: "Bagaimana deployment Redis untuk cognition runtime?"
+  console.log('\n    Query 4: "Bagaimana deployment Redis untuk cognition runtime?"');
+  const resQuery4 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    query: "Bagaimana deployment Redis untuk cognition runtime?"
+  });
+
+  const selectedQ4 = resQuery4.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top4 = selectedQ4[0];
+  const trace4 = top4?.arbitrationTrace;
+
+  console.log(`      - Dominant intent: ${trace4?.dominantIntent}`);
+  console.log(`      - Top retrieved memory: [${top4?.id}] category: [${top4?.category}] "${top4?.content.substring(0, 60)}..."`);
+
+  const q4DominantCorrect = trace4?.dominantIntent === "infrastructure" || trace4?.dominantIntent === "deployment";
+  const q4RetrievalCorrect = top4?.category === "Redis" || top4?.category === "Docker" || top4?.category === "Cache";
+
+  console.log(`      - Expected infra/deployment dominant intent: ${q4DominantCorrect ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Expected Redis/infra memory dominates: ${q4RetrievalCorrect ? "✓ YES" : "❌ NO"}`);
+
+  if (q4DominantCorrect && q4RetrievalCorrect) {
+    console.log("      - Focus query 4 validation: ✓ PASS");
+  } else {
+    console.log("      - Focus query 4 validation: ❌ FAIL (Infrastructure/deployment failed to dominate)");
+    failureCount++;
+  }
+
+  // Replay all queries 5 times
+  console.log('\n    Replay Validation: Replay identical queries 5 times');
   let replayStable = true;
-  const snapshotBase = resQuery1.guardrails.regressionSnapshot;
-  for (let i = 0; i < 8; i++) {
-    const resReplay = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+  const queriesToReplay = [
+    "Bagaimana roadmap database indexing?",
+    "Apa roadmap aktif D1.3?",
+    "Bagaimana telemetry replay bekerja?",
+    "Bagaimana deployment Redis untuk cognition runtime?"
+  ];
+
+  for (const queryText of queriesToReplay) {
+    const resBase = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
       sessionId: "chat_session_default",
-      query: "Apa fokus roadmap aktif saat ini?",
+      query: queryText,
       activeRoadmapPhase: "phase-d",
       activeSprint: "sprint-1",
       activeContinuityCluster: "d13-validation"
     });
-    if (resReplay.guardrails.regressionSnapshot !== snapshotBase) {
-      replayStable = false;
-      break;
+    const snapshotBase = resBase.guardrails.regressionSnapshot;
+
+    for (let i = 0; i < 5; i++) {
+      const resReplay = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+        sessionId: "chat_session_default",
+        query: queryText,
+        activeRoadmapPhase: "phase-d",
+        activeSprint: "sprint-1",
+        activeContinuityCluster: "d13-validation"
+      });
+      if (resReplay.guardrails.regressionSnapshot !== snapshotBase) {
+        replayStable = false;
+        break;
+      }
     }
   }
+
   console.log(`      - Replay identical query outcomes matches: ${replayStable ? "✓ YES" : "❌ NO"}`);
   if (replayStable) {
     console.log("      - Replay determinism validation: ✓ PASS");

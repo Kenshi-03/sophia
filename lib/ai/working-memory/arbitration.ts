@@ -119,6 +119,47 @@ export class RetrievalUsefulnessScorer {
       score += 0.10;
     }
 
+    // 5. Intent-Scope Aware Usefulness (Max 0.30)
+    if (options?.query) {
+      const parsedIntent = QueryIntentParser.parse(options.query);
+      const alignment = QueryIntentParser.getCandidateAlignment(candidate);
+      const dom = parsedIntent.dominantIntent;
+      
+      if (dom === "database" || dom === "infrastructure") {
+        if (alignment.database > 0.4 || alignment.infrastructure > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "roadmap" || dom === "planning") {
+        if (alignment.roadmap > 0.4 || alignment.planning > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "reflection") {
+        if (alignment.reflection > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "observability") {
+        if (alignment.observability > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "governance") {
+        if (alignment.governance > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "deployment") {
+        if (alignment.deployment > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "debugging") {
+        if (alignment.debugging > 0.4) {
+          score += 0.30;
+        }
+      } else if (dom === "implementation") {
+        if (alignment.implementation > 0.4) {
+          score += 0.30;
+        }
+      }
+    }
+
     return Math.max(0.0, Math.min(1.0, Number(score.toFixed(4))));
   }
 }
@@ -216,6 +257,164 @@ function estimateTokenCount(text: string): number {
 /**
  * Candidate Competition and Ranking governance.
  */
+export class QueryIntentParser {
+  private static KEYWORDS: Record<string, string[]> = {
+    database: ["postgres", "indexing", "vector", "pgvector", "query", "schema", "migration", "database", "db", "sql", "tables"],
+    infrastructure: ["docker", "redis", "kubernetes", "k8s", "cache", "caching", "infra", "port", "sockets", "connection pool", "deployment", "deploy", "ci/cd"],
+    observability: ["telemetry", "metrics", "tracing", "logging", "replay", "observability", "spans", "logs", "opentelemetry", "guardrail", "variance"],
+    governance: ["arbitration", "hooks", "governance", "suppression", "duplicate", "echo", "pruning", "budget", "exemption", "trust", "priority"],
+    roadmap: ["roadmap", "phase", "sprint", "objective", "milestone", "active focus", "rencana", "target"],
+    implementation: ["implementasi", "coding", "code", "write", "develop", "build", "buat", "tulis", "setup", "konfigurasi"],
+    reflection: ["refleksi", "evaluasi", "feedback", "analisis", "penilaian", "insight", "kesimpulan", "temuan"],
+    planning: ["perencanaan", "planning", "jadwal", "rencana", "langkah", "tahapan"],
+    debugging: ["debugging", "debug", "error", "fix", "leak", "bug", "perbaikan", "masalah", "fail", "failed"],
+    deployment: ["deployment", "deploy", "vercel", "cloud", "production", "serverless", "host"]
+  };
+
+  public static parse(query: string): {
+    intentWeightMap: Record<string, number>;
+    detectedIntentCategories: string[];
+    dominantIntent: string;
+    technicalSpecificityScore: number;
+    roadmapConstraintApplied: boolean;
+  } {
+    const q = query.toLowerCase();
+    const intentWeightMap: Record<string, number> = {};
+    const detectedIntentCategories: string[] = [];
+
+    // Count keyword matches for each category
+    for (const cat in this.KEYWORDS) {
+      let score = 0.0;
+      const keywords = this.KEYWORDS[cat];
+      for (const kw of keywords) {
+        if (q.includes(kw)) {
+          score += 0.40;
+        }
+      }
+      const finalScore = Number(Math.min(1.0, score).toFixed(4));
+      if (finalScore > 0.0) {
+        intentWeightMap[cat] = finalScore;
+        detectedIntentCategories.push(cat);
+      } else {
+        intentWeightMap[cat] = 0.0;
+      }
+    }
+
+    // Technical specificity
+    const technicalCategories = ["database", "infrastructure", "observability", "governance", "implementation", "debugging", "deployment"];
+    let technicalSpecificityScore = 0.0;
+    for (const cat of technicalCategories) {
+      if (intentWeightMap[cat] > technicalSpecificityScore) {
+        technicalSpecificityScore = intentWeightMap[cat];
+      }
+    }
+
+    // Roadmap constraint
+    let roadmapConstraintApplied = false;
+    let roadmapScore = intentWeightMap["roadmap"] || 0.0;
+    if (technicalSpecificityScore > 0.30 && roadmapScore > 0.0) {
+      roadmapConstraintApplied = true;
+      roadmapScore = Math.max(0.10, Number((roadmapScore * (1.0 - Math.min(0.8, technicalSpecificityScore))).toFixed(4)));
+      intentWeightMap["roadmap"] = roadmapScore;
+      if (roadmapScore <= 0.0) {
+        const index = detectedIntentCategories.indexOf("roadmap");
+        if (index > -1) detectedIntentCategories.splice(index, 1);
+      }
+    }
+
+    // Find dominant intent
+    let dominantIntent = "none";
+    let maxScore = 0.0;
+    for (const cat in intentWeightMap) {
+      if (intentWeightMap[cat] > maxScore) {
+        maxScore = intentWeightMap[cat];
+        dominantIntent = cat;
+      }
+    }
+
+    return {
+      intentWeightMap,
+      detectedIntentCategories,
+      dominantIntent,
+      technicalSpecificityScore,
+      roadmapConstraintApplied
+    };
+  }
+
+  public static getCandidateAlignment(candidate: RetrievalCandidate): Record<string, number> {
+    const alignment: Record<string, number> = {
+      database: 0.0,
+      infrastructure: 0.0,
+      observability: 0.0,
+      governance: 0.0,
+      roadmap: 0.0,
+      implementation: 0.0,
+      reflection: 0.0,
+      planning: 0.0,
+      debugging: 0.0,
+      deployment: 0.0
+    };
+
+    const cat = (candidate.category || "General").toLowerCase();
+    const tax = (candidate.taxonomy || "reflection").toLowerCase();
+
+    // Property-based mappings
+    if (cat === "postgres" || cat === "vector" || cat === "database" || cat === "indexing") {
+      alignment.database = 1.0;
+    } else if (cat === "docker" || cat === "redis" || cat === "kubernetes" || cat === "cache" || cat === "caching") {
+      alignment.infrastructure = 1.0;
+      alignment.deployment = 0.5;
+    } else if (cat === "telemetry" || cat === "observability") {
+      alignment.observability = 1.0;
+    } else if (cat === "governance" || cat === "retrieval" || cat === "arbitration") {
+      alignment.governance = 1.0;
+      alignment.implementation = 0.5;
+    } else if (cat === "testing" || cat === "debugging") {
+      alignment.debugging = 0.8;
+      alignment.implementation = 0.5;
+    } else if (cat === "roadmap") {
+      alignment.roadmap = 1.0;
+      alignment.planning = 0.5;
+    } else if (cat === "deployment" || cat === "deploy") {
+      alignment.deployment = 1.0;
+      alignment.infrastructure = 0.8;
+    }
+
+    if (tax === "anchor") {
+      alignment.governance = 0.5;
+      alignment.roadmap = 0.5;
+    } else if (tax === "planning") {
+      alignment.planning = 1.0;
+    } else if (tax === "insight" || tax === "reflection") {
+      alignment.reflection = 1.0;
+    } else if (tax === "inferred") {
+      alignment.reflection = 0.5;
+    }
+
+    if (candidate.sourceType === "roadmap" || candidate.roadmapPhase || candidate.sprintTag) {
+      alignment.roadmap = Math.max(alignment.roadmap, 0.8);
+    }
+    if (candidate.sourceType === "system") {
+      alignment.governance = Math.max(alignment.governance, 0.5);
+    }
+
+    // Content-keyword based matching
+    const content = candidate.content.toLowerCase();
+    for (const key in this.KEYWORDS) {
+      let matchCount = 0;
+      for (const kw of this.KEYWORDS[key]) {
+        if (content.includes(kw)) {
+          matchCount++;
+        }
+      }
+      const kwScore = Math.min(1.0, matchCount * 0.25);
+      alignment[key] = Math.max(alignment[key], kwScore);
+    }
+
+    return alignment;
+  }
+}
+
 export class RetrievalCompetitionEngine {
   public static process(
     candidates: RetrievalCandidate[],
@@ -241,9 +440,20 @@ export class RetrievalCompetitionEngine {
     const activeSprint = options?.activeSprint || process.env.ACTIVE_SPRINT || "sprint-1";
     const activeContinuityCluster = options?.activeContinuityCluster || process.env.ACTIVE_CONTINUITY_CLUSTER || "d13-validation";
 
+    // Parse query intent if query option is provided
+    const parsedIntent = options?.query 
+      ? QueryIntentParser.parse(options.query)
+      : {
+          intentWeightMap: {} as Record<string, number>,
+          detectedIntentCategories: [] as string[],
+          dominantIntent: "none",
+          technicalSpecificityScore: 0.0,
+          roadmapConstraintApplied: false
+        };
+
     // 1. Calculate Component Scores for all candidates
     const scoredList = candidates.map(candidate => {
-      const semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
+      let semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
       
       // Extract metadata cleanly
       const candRoadmapPhase = candidate.roadmapPhase || candidate.tags?.find(t => t.startsWith("phase:"))?.split(":")[1];
@@ -271,6 +481,29 @@ export class RetrievalCompetitionEngine {
         continuityScore = 0.3;
       }
 
+      // Calculate intent overlap and decay for technical queries
+      const candidateAlignment = QueryIntentParser.getCandidateAlignment(candidate);
+      let intentOverlap = 1.0;
+      if (options?.query) {
+        let totalQueryWeight = 0.0;
+        let weightedOverlap = 0.0;
+        for (const cat in parsedIntent.intentWeightMap) {
+          const queryWeight = parsedIntent.intentWeightMap[cat] || 0.0;
+          if (queryWeight > 0.0) {
+            totalQueryWeight += queryWeight;
+            weightedOverlap += queryWeight * (candidateAlignment[cat] || 0.0);
+          }
+        }
+        if (totalQueryWeight > 0.0) {
+          intentOverlap = Number((weightedOverlap / totalQueryWeight).toFixed(4));
+        }
+      }
+
+      if (options?.query && parsedIntent.technicalSpecificityScore > 0.30) {
+        semanticScore = Number((semanticScore * (0.20 + 0.80 * intentOverlap)).toFixed(4));
+        continuityScore = Number((continuityScore * (0.20 + 0.80 * intentOverlap)).toFixed(4));
+      }
+
       // Historical Anchor Soft Decay
       let historicalDecayApplied = false;
       if (candProtectedAnchor && candRoadmapPhase && candRoadmapPhase !== activeRoadmapPhase) {
@@ -286,27 +519,27 @@ export class RetrievalCompetitionEngine {
 
       const roadmapAlignmentScore = roadmapAligned ? 1.0 : 0.0;
       const sprintAlignmentScore = sprintAligned ? 1.0 : 0.0;
-
       let usefulnessBoost = 0.0;
       if (roadmapAligned || sprintAligned || clusterAligned) {
         usefulnessBoost += 0.25;
         activeFocusBoostApplied = true;
       }
 
-      // Retrieval Intent Awareness
+      // Bounded Soft Blended Intent Weighting
       let intentBoostApplied = false;
-      if (options?.query && detectRetrievalIntent(options.query)) {
-        const isRoadmapOrActiveChain = 
-          candidate.sourceType === "roadmap" ||
-          candRoadmapPhase === activeRoadmapPhase ||
-          candSprintTag === activeSprint ||
-          candContinuityCluster === activeContinuityCluster ||
-          candidate.category.toLowerCase() === "retrieval" ||
-          candidate.category.toLowerCase() === "architecture" ||
-          candidate.category.toLowerCase() === "governance";
+      let usefulnessIntentBoost = 0.0;
 
-        if (isRoadmapOrActiveChain) {
-          usefulnessBoost += 0.20;
+      if (options?.query) {
+        let intentBlendWeight = 0.0;
+        for (const cat in parsedIntent.intentWeightMap) {
+          const queryWeight = parsedIntent.intentWeightMap[cat] || 0.0;
+          const candAlign = candidateAlignment[cat] || 0.0;
+          intentBlendWeight += queryWeight * candAlign;
+        }
+
+        if (intentBlendWeight > 0.0) {
+          usefulnessIntentBoost = Number(Math.min(0.20, intentBlendWeight * 0.15).toFixed(4));
+          usefulnessBoost += usefulnessIntentBoost;
           intentBoostApplied = true;
         }
       }
@@ -342,7 +575,13 @@ export class RetrievalCompetitionEngine {
         continuityType,
         intentBoostApplied,
         roadmapAlignmentScore,
-        sprintAlignmentScore
+        sprintAlignmentScore,
+        detectedIntentCategories: parsedIntent.detectedIntentCategories,
+        intentWeightMap: parsedIntent.intentWeightMap,
+        dominantIntent: parsedIntent.dominantIntent,
+        technicalSpecificityScore: parsedIntent.technicalSpecificityScore,
+        roadmapConstraintApplied: parsedIntent.roadmapConstraintApplied,
+        intentBlendWeights: candidateAlignment
       };
     });
 
@@ -455,7 +694,13 @@ export class RetrievalCompetitionEngine {
         continuityType: item.continuityType,
         intentBoostApplied: item.intentBoostApplied,
         roadmapAlignmentScore: item.roadmapAlignmentScore,
-        sprintAlignmentScore: item.sprintAlignmentScore
+        sprintAlignmentScore: item.sprintAlignmentScore,
+        detectedIntentCategories: item.detectedIntentCategories,
+        intentWeightMap: item.intentWeightMap,
+        dominantIntent: item.dominantIntent,
+        technicalSpecificityScore: item.technicalSpecificityScore,
+        roadmapConstraintApplied: item.roadmapConstraintApplied,
+        intentBlendWeights: item.intentBlendWeights
       };
 
       traces.push(trace);
@@ -498,16 +743,16 @@ export class RetrievalCompetitionEngine {
         return b.temporalScore - a.temporalScore;
       }
       if (traceA.duplicatePenalty !== traceB.duplicatePenalty) {
-        return traceA.duplicatePenalty - traceB.duplicatePenalty; // lower penalty first
+        return traceA.duplicatePenalty - traceB.duplicatePenalty;
       }
       
       const tokensA = estimateTokenCount(a.candidate.content);
       const tokensB = estimateTokenCount(b.candidate.content);
       if (tokensA !== tokensB) {
-        return tokensA - tokensB; // lower tokens first
+        return tokensA - tokensB;
       }
       
-      return a.candidate.id.localeCompare(b.candidate.id); // Lexicographical ID fallback
+      return a.candidate.id.localeCompare(b.candidate.id);
     });
 
     // 5. Return updated candidates with trace attachment

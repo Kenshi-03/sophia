@@ -1,5 +1,5 @@
 import { RetrievalCandidate } from "./types";
-import { SourcePriorityResolver, RetrievalUsefulnessScorer, ConfidenceBalancer, detectRetrievalIntent } from "./arbitration";
+import { SourcePriorityResolver, RetrievalUsefulnessScorer, ConfidenceBalancer, detectRetrievalIntent, QueryIntentParser } from "./arbitration";
 
 export const SCORING_CONSTANTS = {
   SEMANTIC_WEIGHT: 0.30,
@@ -29,7 +29,7 @@ export class ContextScoringEngine {
       query?: string;
     }
   ): RetrievalCandidate {
-    const semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
+    let semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
     
     const activeRoadmapPhase = options?.activeRoadmapPhase || process.env.ACTIVE_ROADMAP_PHASE || "phase-d";
     const activeSprint = options?.activeSprint || process.env.ACTIVE_SPRINT || "sprint-1";
@@ -71,6 +71,31 @@ export class ContextScoringEngine {
       continuityReason = "historical_decay_applied";
     }
 
+    // Calculate intent overlap and decay for technical queries
+    const parsedIntent = options?.query ? QueryIntentParser.parse(options.query) : null;
+    let intentOverlap = 1.0;
+    const candidateAlignment = QueryIntentParser.getCandidateAlignment(candidate);
+    
+    if (options?.query && parsedIntent) {
+      let totalQueryWeight = 0.0;
+      let weightedOverlap = 0.0;
+      for (const cat in parsedIntent.intentWeightMap) {
+        const queryWeight = parsedIntent.intentWeightMap[cat] || 0.0;
+        if (queryWeight > 0.0) {
+          totalQueryWeight += queryWeight;
+          weightedOverlap += queryWeight * (candidateAlignment[cat] || 0.0);
+        }
+      }
+      if (totalQueryWeight > 0.0) {
+        intentOverlap = Number((weightedOverlap / totalQueryWeight).toFixed(4));
+      }
+    }
+
+    if (options?.query && parsedIntent && parsedIntent.technicalSpecificityScore > 0.30) {
+      semanticScore = Number((semanticScore * (0.20 + 0.80 * intentOverlap)).toFixed(4));
+      continuityScore = Number((continuityScore * (0.20 + 0.80 * intentOverlap)).toFixed(4));
+    }
+
     // Active Sprint Dominance Boost
     const roadmapAligned = candRoadmapPhase === activeRoadmapPhase;
     const sprintAligned = candSprintTag === activeSprint;
@@ -81,19 +106,18 @@ export class ContextScoringEngine {
       usefulnessBoost += 0.25;
     }
 
-    // Retrieval Intent Awareness
-    if (options?.query && detectRetrievalIntent(options.query)) {
-      const isRoadmapOrActiveChain = 
-        candidate.sourceType === "roadmap" ||
-        candRoadmapPhase === activeRoadmapPhase ||
-        candSprintTag === activeSprint ||
-        candContinuityCluster === activeContinuityCluster ||
-        candidate.category.toLowerCase() === "retrieval" ||
-        candidate.category.toLowerCase() === "architecture" ||
-        candidate.category.toLowerCase() === "governance";
+    // Bounded Soft Blended Intent Weighting
+    if (options?.query && parsedIntent) {
+      let intentBlendWeight = 0.0;
+      for (const cat in parsedIntent.intentWeightMap) {
+        const queryWeight = parsedIntent.intentWeightMap[cat] || 0.0;
+        const candAlign = candidateAlignment[cat] || 0.0;
+        intentBlendWeight += queryWeight * candAlign;
+      }
 
-      if (isRoadmapOrActiveChain) {
-        usefulnessBoost += 0.20;
+      if (intentBlendWeight > 0.0) {
+        const usefulnessIntentBoost = Number(Math.min(0.20, intentBlendWeight * 0.15).toFixed(4));
+        usefulnessBoost += usefulnessIntentBoost;
       }
     }
 

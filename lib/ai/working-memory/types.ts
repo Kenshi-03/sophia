@@ -73,6 +73,12 @@ export interface ArbitrationTrace {
   intentBoostApplied?: boolean;
   roadmapAlignmentScore?: number;
   sprintAlignmentScore?: number;
+  detectedIntentCategories?: string[];
+  intentWeightMap?: Record<string, number>;
+  dominantIntent?: string;
+  technicalSpecificityScore?: number;
+  roadmapConstraintApplied?: boolean;
+  intentBlendWeights?: Record<string, number>;
 }
 
 export interface ArbitrationResult {
