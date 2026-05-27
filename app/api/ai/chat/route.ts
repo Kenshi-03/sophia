@@ -14,6 +14,7 @@ import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { RetrievalArbitrationHooks, DetailFidelityEvaluator } from '@/lib/ai/working-memory/arbitration';
 import { ReflectionBuffer } from '@/lib/ai/working-memory/reflection-buffer';
 import { ExecutiveFSM } from '@/lib/ai/orchestration/executive-fsm';
+import { TransitionCause } from '@/lib/ai/working-memory/types';
 import { 
   AsyncOrchestrator, 
   AsyncTaskRunner, 
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
       }
     });
 
-    const [memoriesResult, eventsResult] = await orchestrator.executeAllConcurrently([taskA, taskB]);
+    const [memoriesResult, eventsResult] = await orchestrator.executeAllConcurrently<any>([taskA, taskB]);
 
     const relevantMemories = memoriesResult || [];
     const events = eventsResult || [];
@@ -122,7 +123,7 @@ export async function POST(request: Request) {
       (state.retrievalStaging.metadata as any).arbitrationGuardrails = arbitrationResult.guardrails;
       (state.retrievalStaging.metadata as any).arbitrationTraces = arbitrationResult.traces;
 
-      state.retrievalStaging.temporalCandidates = events.map((e) => ({
+      state.retrievalStaging.temporalCandidates = events.map((e: any) => ({
         id: e.id,
         title: e.title,
         startTime: typeof e.startTime === 'string' ? e.startTime : e.startTime.toISOString(),
