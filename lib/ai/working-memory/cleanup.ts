@@ -38,9 +38,9 @@ export async function cleanupStaleExecutions(): Promise<number> {
         const state = JSON.parse(dataStr) as WorkingMemoryState;
         const wm = WorkingMemory.fromState(state);
         
-        // Update stage to failed & set cleanupReason to timeout
+        // Update stage to FAILED & set cleanupReason to timeout
         await wm.updateState((s) => {
-          s.currentStage = 'failed';
+          s.currentStage = 'FAILED';
           s.lifecycleStatus = 'completed';
           s.cleanupReason = 'stale_timeout';
         });
