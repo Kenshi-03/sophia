@@ -924,3 +924,98 @@ export function detectRetrievalIntent(query: string): boolean {
   ];
   return keywords.some(kw => q.includes(kw));
 }
+
+export class DetailFidelityEvaluator {
+  private static GOVERNANCE_DETAIL_PATTERNS = [
+    { name: "overlap threshold > 0.70", regex: /0\.70|70%/i },
+    { name: "base duplicate penalty = 0.20", regex: /0\.20/i },
+    { name: "echo penalty cap = 0.25", regex: /0\.25/i },
+    { name: "decay rate *0.80", regex: /0\.80|80%/i },
+    { name: "echo penalty base = 0.10", regex: /0\.10/i },
+    { name: "duplicate scaling = 0.04", regex: /0\.04/i },
+    { name: "echo scaling = 0.03", regex: /0\.03/i },
+    { name: "duplicate penalty cap = 0.45", regex: /0\.45/i },
+    { name: "usefulness boost = +0.25", regex: /\+0\.25/i },
+    { name: "intent boost = +0.20", regex: /\+0\.20/i },
+    { name: "finalScore", regex: /finalScore|final score/i },
+    { name: "usefulnessScore", regex: /usefulnessScore|usefulness score/i },
+    { name: "continuityScore", regex: /continuityScore|continuity score/i },
+    { name: "semanticScore", regex: /semanticScore|semantic score/i },
+    { name: "sourceScore", regex: /sourceScore|source score/i },
+    { name: "temporalScore", regex: /temporalScore|temporal score/i },
+    { name: "duplicatePenalty", regex: /duplicatePenalty|duplicate penalty/i },
+    { name: "tokenCount", regex: /tokenCount|token count/i },
+    { name: "lexicographical ID", regex: /lexicographical|lexikografis/i }
+  ];
+
+  public static evaluate(
+    selectedCandidates: RetrievalCandidate[],
+    response: string
+  ): {
+    retrievedDetailCount: number;
+    preservedGovernanceFacts: number;
+    groundingDominanceScore: number;
+    genericFallbackScore: number;
+    retrievalInfluenceRatio: number;
+    detailCompressionRatio: number;
+  } {
+    const responseLower = response.toLowerCase();
+    const retrievedText = selectedCandidates.map(c => c.content).join(" ").toLowerCase();
+
+    // 1. Identify which detail patterns are present in the retrieved candidates
+    const matchedPatternsInRetrieval = this.GOVERNANCE_DETAIL_PATTERNS.filter(pattern => 
+      pattern.regex.test(retrievedText)
+    );
+
+    const retrievedDetailCount = matchedPatternsInRetrieval.length;
+
+    // 2. Count how many of these matched patterns also survive in the response
+    const preservedPatternsInResponse = matchedPatternsInRetrieval.filter(pattern => 
+      pattern.regex.test(responseLower)
+    );
+
+    const preservedGovernanceFacts = preservedPatternsInResponse.length;
+
+    // 3. Compute metrics
+    const groundingDominanceScore = retrievedDetailCount > 0
+      ? Number((preservedGovernanceFacts / retrievedDetailCount).toFixed(4))
+      : 1.0;
+
+    const genericFallbackScore = Number((1.0 - groundingDominanceScore).toFixed(4));
+    const retrievalInfluenceRatio = groundingDominanceScore;
+    const detailCompressionRatio = Number((1.0 - groundingDominanceScore).toFixed(4));
+
+    // Emit warning logs if telemetry thresholds are breached
+    if (retrievedDetailCount > 0) {
+      if (detailCompressionRatio > 0.45) {
+        logger.warn("Detail Compression Alert: Significant detail loss detected in cognition synthesis.", {
+          retrievedDetailCount,
+          preservedGovernanceFacts,
+          detailCompressionRatio,
+          genericFallbackScore
+        });
+      }
+      
+      if (retrievalInfluenceRatio < 0.55) {
+        logger.warn("Detail Bounding Warning: Low retrieval influence ratio detected. Response is too generic.", {
+          retrievalInfluenceRatio,
+          targetMin: 0.55
+        });
+      } else if (retrievalInfluenceRatio > 0.80) {
+        logger.warn("Detail Regurgitation Warning: High retrieval influence ratio detected. Response may lack synthesis.", {
+          retrievalInfluenceRatio,
+          targetMax: 0.80
+        });
+      }
+    }
+
+    return {
+      retrievedDetailCount,
+      preservedGovernanceFacts,
+      groundingDominanceScore,
+      genericFallbackScore,
+      retrievalInfluenceRatio,
+      detailCompressionRatio
+    };
+  }
+}

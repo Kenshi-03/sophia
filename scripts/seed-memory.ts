@@ -73,7 +73,7 @@ const duplicateClusterMemories: SeedMemory[] = [
   // Cluster A: "Retrieval Arbitration" (5 memories)
   {
     id: "seed-dup-01",
-    content: "Retrieval arbitration hooks are essential for governing context candidate selection in SOPHIA.",
+    content: "System Rule (D1.3): Duplicate suppression uses an overlap threshold > 0.70 to trigger an additive penalty. The base duplicate penalty is 0.20, and the echo penalty cap is 0.25. Protected anchors are exempt from suppression.",
     category: "Retrieval",
     sourceType: "system",
     memoryType: "anchor",
@@ -89,7 +89,7 @@ const duplicateClusterMemories: SeedMemory[] = [
   },
   {
     id: "seed-dup-02",
-    content: "Retrieval arbitration hooks are crucial for governing context candidate selection in SOPHIA, allowing developers to manage context length and avoid duplicate nodes in the attention window.",
+    content: "System Rule (D1.3): Duplicate suppression applies an additive overlap penalty. Overlap threshold is set to > 0.70. Duplicate penalty base is 0.20, scaling by +0.04 per extra duplicate up to 0.45 cap. Echo penalty base is 0.10, scaling by +0.03 up to 0.25 cap. Protected anchor exemptions apply.",
     category: "Retrieval",
     sourceType: "roadmap",
     memoryType: "planning",
@@ -104,7 +104,7 @@ const duplicateClusterMemories: SeedMemory[] = [
   },
   {
     id: "seed-dup-03",
-    content: "Retrieval arbitration hooks are important for governing context candidate selection in SOPHIA.",
+    content: "System Rule (D1.3): Duplicate overlap threshold is > 0.70. Penalty base is 0.20 and echo penalty cap is 0.25. System anchors, active sessions, and roadmap category focus are 100% exempt from suppression penalties. Episodic memories have 50% exemption (multiplier 0.5).",
     category: "Retrieval",
     sourceType: "explicit_user",
     memoryType: "reflection",
@@ -579,7 +579,7 @@ const continuityChainMemories: SeedMemory[] = [
   // Chain A: "D1.3 Validation" (6 memories)
   {
     id: "seed-cont-01",
-    content: "Continuity Chain: We need to write automated scenarios for testing D1.3 stabilization.",
+    content: "Active Sprint Boost Calibration: D1.3 applies +0.25 usefulness score boost for active sprints/roadmaps. Historical anchors have decay continuity *= 0.80. Intent weight boost is calibrated up to +0.20.",
     category: "Retrieval",
     sourceType: "roadmap",
     memoryType: "planning",
@@ -725,7 +725,7 @@ const continuityChainMemories: SeedMemory[] = [
   },
   {
     id: "seed-cont-09",
-    content: "Stabilization: The 8-stage tie-break flow is essential to maintain execution stability under high load.",
+    content: "Stabilization: Tie-break works via a deterministic 9-stage cascade: 1. finalScore, 2. usefulnessScore, 3. continuityScore, 4. semanticScore, 5. sourceScore, 6. temporalScore, 7. duplicatePenalty, 8. tokenCount, 9. Lexicographical ID fallback.",
     category: "Governance",
     sourceType: "roadmap",
     memoryType: "planning",
@@ -1482,26 +1482,48 @@ async function main() {
       dbMemoryType = "episodic";
     }
 
-    await prisma.memoryNode.create({
-      data: {
-        id: mem.id,
-        content: mem.content,
-        category: mem.category || "General",
-        tags: dbTags,
-        importance: mem.importance ?? 1.0,
-        decayRate: mem.decayRate ?? 0.01,
-        sourceType: mem.sourceType,
-        visibility: mem.visibility || "private",
-        taxonomy: mem.taxonomy || "reflection",
-        contentHash: hash,
-        reliability: mem.reliability ?? 1.0,
-        memoryType: dbMemoryType,
-        userId: user.id,
-        createdAt: mem.createdAt,
-      },
-    });
+    if (existing) {
+      await prisma.memoryNode.update({
+        where: { id: mem.id },
+        data: {
+          content: mem.content,
+          category: mem.category || "General",
+          tags: dbTags,
+          importance: mem.importance ?? 1.0,
+          decayRate: mem.decayRate ?? 0.01,
+          sourceType: mem.sourceType,
+          visibility: mem.visibility || "private",
+          taxonomy: mem.taxonomy || "reflection",
+          contentHash: hash,
+          reliability: mem.reliability ?? 1.0,
+          memoryType: dbMemoryType,
+          userId: user.id,
+          createdAt: mem.createdAt,
+        }
+      });
+      created++;
+    } else {
+      await prisma.memoryNode.create({
+        data: {
+          id: mem.id,
+          content: mem.content,
+          category: mem.category || "General",
+          tags: dbTags,
+          importance: mem.importance ?? 1.0,
+          decayRate: mem.decayRate ?? 0.01,
+          sourceType: mem.sourceType,
+          visibility: mem.visibility || "private",
+          taxonomy: mem.taxonomy || "reflection",
+          contentHash: hash,
+          reliability: mem.reliability ?? 1.0,
+          memoryType: dbMemoryType,
+          userId: user.id,
+          createdAt: mem.createdAt,
+        },
+      });
+      created++;
+    }
 
-    created++;
     const cat = mem.category || "General";
     const tax = mem.taxonomy || "reflection";
     categoryStats[cat] = (categoryStats[cat] || 0) + 1;
@@ -1823,6 +1845,58 @@ async function main() {
     failureCount++;
   }
 
+  // Query 5: "Apa keputusan duplicate suppression di sprint D1.3?"
+  console.log('\n    Query 5: "Apa keputusan duplicate suppression di sprint D1.3?"');
+  const resQuery5 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    query: "Apa keputusan duplicate suppression di sprint D1.3?",
+    activeRoadmapPhase: "phase-d",
+    activeSprint: "sprint-1"
+  });
+  const selectedQ5 = resQuery5.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top5 = selectedQ5.find(c => c.id === "seed-dup-01" || c.id === "seed-dup-02" || c.id === "seed-dup-03");
+  console.log(`      - Top duplicate suppression memory: [${top5?.id}] "${top5?.content.substring(0, 60)}..."`);
+  if (top5 && top5.content.includes("0.70") && top5.content.includes("0.20") && top5.content.includes("0.25")) {
+    console.log("      - Focus query 5 validation: ✓ PASS");
+  } else {
+    console.log("      - Focus query 5 validation: ❌ FAIL (Duplicate suppression details missing from top candidates)");
+    failureCount++;
+  }
+
+  // Query 6: "Bagaimana arbitration tie-break bekerja?"
+  console.log('\n    Query 6: "Bagaimana arbitration tie-break bekerja?"');
+  const resQuery6 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    query: "Bagaimana arbitration tie-break bekerja?"
+  });
+  const selectedQ6 = resQuery6.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top6 = selectedQ6.find(c => c.id === "seed-cont-09");
+  console.log(`      - Top tie-break memory: [${top6?.id}] "${top6?.content.substring(0, 60)}..."`);
+  if (top6 && top6.content.toLowerCase().includes("lexicographical id")) {
+    console.log("      - Focus query 6 validation: ✓ PASS");
+  } else {
+    console.log("      - Focus query 6 validation: ❌ FAIL (Tie-break cascade details missing from top candidates)");
+    failureCount++;
+  }
+
+  // Query 7: "Bagaimana active sprint boost dikalibrasi?"
+  console.log('\n    Query 7: "Bagaimana active sprint boost dikalibrasi?"');
+  const resQuery7 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    query: "Bagaimana active sprint boost dikalibrasi?",
+    activeRoadmapPhase: "phase-d",
+    activeSprint: "sprint-1"
+  });
+  const selectedQ7 = resQuery7.candidates.filter(c => c.arbitrationTrace?.selectionDecision === 'selected');
+  const top7 = selectedQ7.find(c => c.id === "seed-cont-01");
+  console.log(`      - Top active sprint boost memory: [${top7?.id}] "${top7?.content.substring(0, 60)}..."`);
+  if (top7 && top7.content.includes("+0.25") && top7.content.includes("continuity *= 0.80")) {
+    console.log("      - Focus query 7 validation: ✓ PASS");
+  } else {
+    console.log("      - Focus query 7 validation: ❌ FAIL (Active sprint boost details missing from top candidates)");
+    failureCount++;
+  }
+
   // Replay all queries 5 times
   console.log('\n    Replay Validation: Replay identical queries 5 times');
   let replayStable = true;
@@ -1830,7 +1904,10 @@ async function main() {
     "Bagaimana roadmap database indexing?",
     "Apa roadmap aktif D1.3?",
     "Bagaimana telemetry replay bekerja?",
-    "Bagaimana deployment Redis untuk cognition runtime?"
+    "Bagaimana deployment Redis untuk cognition runtime?",
+    "Apa keputusan duplicate suppression di sprint D1.3?",
+    "Bagaimana arbitration tie-break bekerja?",
+    "Bagaimana active sprint boost dikalibrasi?"
   ];
 
   for (const queryText of queriesToReplay) {

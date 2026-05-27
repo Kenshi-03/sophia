@@ -12,7 +12,7 @@ import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/
 import { traceWorkingMemory, logDevCognitionObservability } from '@/lib/ai/working-memory/observability';
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
-import { RetrievalArbitrationHooks } from '@/lib/ai/working-memory/arbitration';
+import { RetrievalArbitrationHooks, DetailFidelityEvaluator } from '@/lib/ai/working-memory/arbitration';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -147,6 +147,20 @@ export async function POST(request: Request) {
       state.currentStage = 'completed';
       state.lifecycleStatus = 'completed';
       state.reasoningState.draftResponse = response;
+
+      // Evaluate detail preservation and attach metrics to arbitrationGuardrails in metadata
+      const metrics = DetailFidelityEvaluator.evaluate(
+        state.retrievalStaging.rawCandidates,
+        response
+      );
+      if (state.retrievalStaging.metadata.arbitrationGuardrails) {
+        state.retrievalStaging.metadata.arbitrationGuardrails = {
+          ...state.retrievalStaging.metadata.arbitrationGuardrails,
+          ...metrics
+        };
+      } else {
+        (state.retrievalStaging.metadata as any).arbitrationGuardrails = metrics;
+      }
     });
 
     const latency = Date.now() - startTime;

@@ -92,6 +92,12 @@ export interface ArbitrationResult {
     totalDuplicatePenalties: number;
     totalEchoPenalties: number;
     regressionSnapshot: string;
+    retrievedDetailCount?: number;
+    preservedGovernanceFacts?: number;
+    groundingDominanceScore?: number;
+    genericFallbackScore?: number;
+    retrievalInfluenceRatio?: number;
+    detailCompressionRatio?: number;
   };
 }
 
