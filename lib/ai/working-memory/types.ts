@@ -67,6 +67,12 @@ export interface ArbitrationTrace {
   finalScore: number;
   selectionDecision: 'selected' | 'rejected';
   rejectionReason: string | null;
+  activeFocusBoostApplied?: boolean;
+  historicalDecayApplied?: boolean;
+  continuityType?: "active" | "historical";
+  intentBoostApplied?: boolean;
+  roadmapAlignmentScore?: number;
+  sprintAlignmentScore?: number;
 }
 
 export interface ArbitrationResult {

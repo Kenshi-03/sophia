@@ -69,6 +69,10 @@ export class RetrievalUsefulnessScorer {
       sprintTheme?: string;
       phaseTheme?: string;
       protectedAnchorIds?: string[];
+      activeRoadmapPhase?: string;
+      activeSprint?: string;
+      activeContinuityCluster?: string;
+      query?: string;
     }
   ): number {
     let score = 0.0;
@@ -222,6 +226,10 @@ export class RetrievalCompetitionEngine {
       sprintTheme?: string;
       phaseTheme?: string;
       protectedAnchorIds?: string[];
+      activeRoadmapPhase?: string;
+      activeSprint?: string;
+      activeContinuityCluster?: string;
+      query?: string;
     }
   ): {
     arbitratedCandidates: RetrievalCandidate[];
@@ -229,16 +237,31 @@ export class RetrievalCompetitionEngine {
   } {
     const protectedIds = new Set(options?.protectedAnchorIds || []);
 
+    const activeRoadmapPhase = options?.activeRoadmapPhase || process.env.ACTIVE_ROADMAP_PHASE || "phase-d";
+    const activeSprint = options?.activeSprint || process.env.ACTIVE_SPRINT || "sprint-1";
+    const activeContinuityCluster = options?.activeContinuityCluster || process.env.ACTIVE_CONTINUITY_CLUSTER || "d13-validation";
+
     // 1. Calculate Component Scores for all candidates
     const scoredList = candidates.map(candidate => {
       const semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
       
-      let continuityScore = 0.0;
+      // Extract metadata cleanly
+      const candRoadmapPhase = candidate.roadmapPhase || candidate.tags?.find(t => t.startsWith("phase:"))?.split(":")[1];
+      const candSprintTag = candidate.sprintTag || candidate.tags?.find(t => t.startsWith("sprint:"))?.split(":")[1];
+      const candContinuityCluster = candidate.continuityCluster || candidate.tags?.find(t => t.startsWith("cluster:"))?.split(":")[1];
+      const candProtectedAnchor = candidate.protectedAnchor || candidate.tags?.includes("protected:true");
+
+      // Active Continuity Prioritization
       const isSessionMatch = 
         candidate.sourceType === "active_session_context" || 
         (options?.sessionId && candidate.id.includes(options.sessionId));
+      
+      const isClusterMatch = candContinuityCluster === activeContinuityCluster;
+      const continuityType: "active" | "historical" = 
+        isSessionMatch || isClusterMatch ? "active" : "historical";
 
-      if (isSessionMatch) {
+      let continuityScore = 0.0;
+      if (continuityType === "active") {
         continuityScore = 1.0;
       } else if (options?.activeTopic && candidate.category.toLowerCase() === options.activeTopic.toLowerCase()) {
         continuityScore = 0.7;
@@ -248,9 +271,51 @@ export class RetrievalCompetitionEngine {
         continuityScore = 0.3;
       }
 
+      // Historical Anchor Soft Decay
+      let historicalDecayApplied = false;
+      if (candProtectedAnchor && candRoadmapPhase && candRoadmapPhase !== activeRoadmapPhase) {
+        continuityScore = Number((continuityScore * 0.80).toFixed(4));
+        historicalDecayApplied = true;
+      }
+
+      // Active Sprint Dominance Boost
+      let activeFocusBoostApplied = false;
+      const roadmapAligned = candRoadmapPhase === activeRoadmapPhase;
+      const sprintAligned = candSprintTag === activeSprint;
+      const clusterAligned = candContinuityCluster === activeContinuityCluster;
+
+      const roadmapAlignmentScore = roadmapAligned ? 1.0 : 0.0;
+      const sprintAlignmentScore = sprintAligned ? 1.0 : 0.0;
+
+      let usefulnessBoost = 0.0;
+      if (roadmapAligned || sprintAligned || clusterAligned) {
+        usefulnessBoost += 0.25;
+        activeFocusBoostApplied = true;
+      }
+
+      // Retrieval Intent Awareness
+      let intentBoostApplied = false;
+      if (options?.query && detectRetrievalIntent(options.query)) {
+        const isRoadmapOrActiveChain = 
+          candidate.sourceType === "roadmap" ||
+          candRoadmapPhase === activeRoadmapPhase ||
+          candSprintTag === activeSprint ||
+          candContinuityCluster === activeContinuityCluster ||
+          candidate.category.toLowerCase() === "retrieval" ||
+          candidate.category.toLowerCase() === "architecture" ||
+          candidate.category.toLowerCase() === "governance";
+
+        if (isRoadmapOrActiveChain) {
+          usefulnessBoost += 0.20;
+          intentBoostApplied = true;
+        }
+      }
+
+      const baseUsefulness = RetrievalUsefulnessScorer.score(candidate, options);
+      const usefulnessScore = Number(Math.max(0.0, Math.min(1.0, baseUsefulness + usefulnessBoost)).toFixed(4));
+
       const sourceScore = SourcePriorityResolver.resolve(candidate);
       const temporalScore = Math.max(0, Math.min(1.0, candidate.decayedImportance));
-      const usefulnessScore = RetrievalUsefulnessScorer.score(candidate, options);
       const confidenceScore = ConfidenceBalancer.calculate(candidate, options);
 
       const baseScore = Number(
@@ -271,7 +336,13 @@ export class RetrievalCompetitionEngine {
         temporalScore,
         usefulnessScore,
         confidenceScore,
-        baseScore
+        baseScore,
+        activeFocusBoostApplied,
+        historicalDecayApplied,
+        continuityType,
+        intentBoostApplied,
+        roadmapAlignmentScore,
+        sprintAlignmentScore
       };
     });
 
@@ -378,7 +449,13 @@ export class RetrievalCompetitionEngine {
         echoPenalty: Number(echoPenalty.toFixed(4)),
         finalScore,
         selectionDecision,
-        rejectionReason
+        rejectionReason,
+        activeFocusBoostApplied: item.activeFocusBoostApplied,
+        historicalDecayApplied: item.historicalDecayApplied,
+        continuityType: item.continuityType,
+        intentBoostApplied: item.intentBoostApplied,
+        roadmapAlignmentScore: item.roadmapAlignmentScore,
+        sprintAlignmentScore: item.sprintAlignmentScore
       };
 
       traces.push(trace);
@@ -561,6 +638,10 @@ export class RetrievalArbitrationHooks {
       sprintTheme?: string;
       phaseTheme?: string;
       protectedAnchorIds?: string[];
+      activeRoadmapPhase?: string;
+      activeSprint?: string;
+      activeContinuityCluster?: string;
+      query?: string;
     }
   ): ArbitrationResult {
     const startTime = Date.now();
@@ -586,4 +667,15 @@ export class RetrievalArbitrationHooks {
       guardrails
     };
   }
+}
+
+export function detectRetrievalIntent(query: string): boolean {
+  const q = query.toLowerCase();
+  const keywords = [
+    "roadmap", "fokus", "sprint", "tujuan", "phase", "fase", 
+    "d1.3", "d1.2", "sprint-1", "phase-d", "sprint aktif", "roadmap aktif",
+    "arbitration", "hooks", "usefulness", "suppression", "duplicate",
+    "continuity", "governance", "stabilization", "replay", "determinism"
+  ];
+  return keywords.some(kw => q.includes(kw));
 }

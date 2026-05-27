@@ -55,7 +55,11 @@ export async function POST(request: Request) {
       // Run Retrieval Arbitration Hooks to select/score best candidates deterministically
       const arbitrationResult = RetrievalArbitrationHooks.arbitrate(relevantMemories, {
         sessionId: state.sessionId,
-        currentStage: state.currentStage
+        currentStage: state.currentStage,
+        query: query,
+        activeRoadmapPhase: process.env.ACTIVE_ROADMAP_PHASE || "phase-d",
+        activeSprint: process.env.ACTIVE_SPRINT || "sprint-1",
+        activeContinuityCluster: process.env.ACTIVE_CONTINUITY_CLUSTER || "d13-validation"
       });
 
       state.retrievalStaging.rawCandidates = arbitrationResult.candidates;

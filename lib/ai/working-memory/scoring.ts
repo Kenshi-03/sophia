@@ -1,5 +1,5 @@
 import { RetrievalCandidate } from "./types";
-import { SourcePriorityResolver, RetrievalUsefulnessScorer, ConfidenceBalancer } from "./arbitration";
+import { SourcePriorityResolver, RetrievalUsefulnessScorer, ConfidenceBalancer, detectRetrievalIntent } from "./arbitration";
 
 export const SCORING_CONSTANTS = {
   SEMANTIC_WEIGHT: 0.30,
@@ -23,20 +23,37 @@ export class ContextScoringEngine {
       sprintTheme?: string;
       phaseTheme?: string;
       protectedAnchorIds?: string[];
+      activeRoadmapPhase?: string;
+      activeSprint?: string;
+      activeContinuityCluster?: string;
+      query?: string;
     }
   ): RetrievalCandidate {
     const semanticScore = Number((Math.max(0, Math.min(100, candidate.relevanceScore)) / 100).toFixed(4));
     
-    let continuityScore = 0.0;
-    let continuityReason = "none";
-    
+    const activeRoadmapPhase = options?.activeRoadmapPhase || process.env.ACTIVE_ROADMAP_PHASE || "phase-d";
+    const activeSprint = options?.activeSprint || process.env.ACTIVE_SPRINT || "sprint-1";
+    const activeContinuityCluster = options?.activeContinuityCluster || process.env.ACTIVE_CONTINUITY_CLUSTER || "d13-validation";
+
+    const candRoadmapPhase = candidate.roadmapPhase || candidate.tags?.find(t => t.startsWith("phase:"))?.split(":")[1];
+    const candSprintTag = candidate.sprintTag || candidate.tags?.find(t => t.startsWith("sprint:"))?.split(":")[1];
+    const candContinuityCluster = candidate.continuityCluster || candidate.tags?.find(t => t.startsWith("cluster:"))?.split(":")[1];
+    const candProtectedAnchor = candidate.protectedAnchor || candidate.tags?.includes("protected:true");
+
     const isSessionMatch = 
       candidate.sourceType === "active_session_context" || 
       (options?.sessionId && candidate.id.includes(options.sessionId));
+    
+    const isClusterMatch = candContinuityCluster === activeContinuityCluster;
+    const continuityType: "active" | "historical" = 
+      isSessionMatch || isClusterMatch ? "active" : "historical";
 
-    if (isSessionMatch) {
+    let continuityScore = 0.0;
+    let continuityReason = "none";
+
+    if (continuityType === "active") {
       continuityScore = 1.0;
-      continuityReason = "active_session_match";
+      continuityReason = isSessionMatch ? "active_session_match" : "active_continuity_match";
     } else if (options?.activeTopic && candidate.category.toLowerCase() === options.activeTopic.toLowerCase()) {
       continuityScore = 0.7;
       continuityReason = "category_match";
@@ -48,9 +65,43 @@ export class ContextScoringEngine {
       continuityReason = "recent_context_match";
     }
 
+    // Historical Anchor Soft Decay
+    if (candProtectedAnchor && candRoadmapPhase && candRoadmapPhase !== activeRoadmapPhase) {
+      continuityScore = Number((continuityScore * 0.80).toFixed(4));
+      continuityReason = "historical_decay_applied";
+    }
+
+    // Active Sprint Dominance Boost
+    const roadmapAligned = candRoadmapPhase === activeRoadmapPhase;
+    const sprintAligned = candSprintTag === activeSprint;
+    const clusterAligned = candContinuityCluster === activeContinuityCluster;
+
+    let usefulnessBoost = 0.0;
+    if (roadmapAligned || sprintAligned || clusterAligned) {
+      usefulnessBoost += 0.25;
+    }
+
+    // Retrieval Intent Awareness
+    if (options?.query && detectRetrievalIntent(options.query)) {
+      const isRoadmapOrActiveChain = 
+        candidate.sourceType === "roadmap" ||
+        candRoadmapPhase === activeRoadmapPhase ||
+        candSprintTag === activeSprint ||
+        candContinuityCluster === activeContinuityCluster ||
+        candidate.category.toLowerCase() === "retrieval" ||
+        candidate.category.toLowerCase() === "architecture" ||
+        candidate.category.toLowerCase() === "governance";
+
+      if (isRoadmapOrActiveChain) {
+        usefulnessBoost += 0.20;
+      }
+    }
+
+    const baseUsefulness = RetrievalUsefulnessScorer.score(candidate, options);
+    const usefulnessScore = Number(Math.max(0.0, Math.min(1.0, baseUsefulness + usefulnessBoost)).toFixed(4));
+
     const sourceScore = SourcePriorityResolver.resolve(candidate);
     const temporalScore = Math.max(0, Math.min(1.0, candidate.decayedImportance));
-    const usefulnessScore = RetrievalUsefulnessScorer.score(candidate, options);
     const confidenceScore = ConfidenceBalancer.calculate(candidate, options);
 
     const baseScore = Number(
@@ -73,7 +124,7 @@ export class ContextScoringEngine {
         temporalWeight: temporalScore,
         continuityWeight: continuityScore,
         confidenceScore,
-        sourceMultiplier: sourceScore, // map source trust value here for backward compatibility
+        sourceMultiplier: sourceScore,
         combinedScoreBeforeMultiplier: baseScore,
         finalCombinedScore,
         continuityReason
@@ -93,6 +144,10 @@ export class ContextScoringEngine {
       sprintTheme?: string;
       phaseTheme?: string;
       protectedAnchorIds?: string[];
+      activeRoadmapPhase?: string;
+      activeSprint?: string;
+      activeContinuityCluster?: string;
+      query?: string;
     }
   ): RetrievalCandidate[] {
     return candidates.map(c => this.scoreCandidate(c, options));
