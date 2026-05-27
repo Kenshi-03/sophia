@@ -10,6 +10,11 @@ export type WorkingMemoryStage =
 export type LifecycleStatus = 'active' | 'stale' | 'completed' | 'cleaned';
 
 export type RetrievalSourceType =
+  | 'system'
+  | 'roadmap'
+  | 'explicit_user'
+  | 'episodic'
+  | 'synthetic'
   | 'semantic_memory'
   | 'episodic_memory'
   | 'google_calendar_event'
@@ -49,6 +54,35 @@ export const WORKING_MEMORY_LIMITS = {
   STALE_TIMEOUT_MS: 5 * 60 * 1000 // 5 minutes inactivity timeout
 } as const;
 
+export interface ArbitrationTrace {
+  candidateId: string;
+  semanticScore: number;
+  continuityScore: number;
+  sourceScore: number;
+  confidenceScore: number;
+  temporalScore: number;
+  usefulnessScore: number;
+  duplicatePenalty: number;
+  echoPenalty: number;
+  finalScore: number;
+  selectionDecision: 'selected' | 'rejected';
+  rejectionReason: string | null;
+}
+
+export interface ArbitrationResult {
+  candidates: RetrievalCandidate[];
+  traces: ArbitrationTrace[];
+  guardrails: {
+    scoreMean: number;
+    scoreVariance: number;
+    continuityDominanceRatio: number;
+    sourceTypeCounts: Record<string, number>;
+    totalDuplicatePenalties: number;
+    totalEchoPenalties: number;
+    regressionSnapshot: string;
+  };
+}
+
 export interface RetrievalCandidate {
   id: string;
   content: string; // Stored only in Redis (ephemeral)
@@ -64,6 +98,7 @@ export interface RetrievalCandidate {
   tokenEstimate?: number;
   temporalWeight?: number;
   confidenceScore?: number;
+  arbitrationTrace?: ArbitrationTrace;
   scoreBreakdown?: {
     semanticScore: number;
     temporalWeight: number;
@@ -74,6 +109,16 @@ export interface RetrievalCandidate {
     finalCombinedScore: number;
     continuityReason?: string;
   };
+  // D1.3 metadata fields
+  sprintTag?: string;
+  roadmapPhase?: string;
+  continuityCluster?: string;
+  protectedAnchor?: boolean;
+  confidence?: number;
+  reliability?: number;
+  importance?: number;
+  decayRate?: number;
+  tags?: string[];
 }
 
 export interface DiversityMetrics {
@@ -138,6 +183,8 @@ export interface RetrievalStagingArea {
     };
     diversityMetrics?: DiversityMetrics;
     assembledContext?: AssembledReasoningContext;
+    arbitrationTraces?: ArbitrationTrace[] | null;
+    arbitrationGuardrails?: any | null;
   };
   traceability: {
     filtersApplied: string[];

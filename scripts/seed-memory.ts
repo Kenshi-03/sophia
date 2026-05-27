@@ -1,860 +1,1410 @@
 /**
- * SOPHIA Cognition Runtime — Synthetic Memory Seed Script
- * ========================================================
+ * SOPHIA Cognition Runtime — Synthetic Memory Seed Script (D1.3 Enhanced)
+ * =========================================================================
  * 
  * Purpose:
- *   Generates deterministic synthetic cognition dataset for stress-testing
- *   the full D1.1 → D1.2-E pipeline:
- *     - D1.1  WorkingMemory Core
- *     - D1.2-A Token Budgeting
- *     - D1.2-B Context Scoring
- *     - D1.2-C Adaptive Pruning
- *     - D1.2-D Diversity & Temporal Weighting
- *     - D1.2-E Final Context Assembly
- * 
- * Categories seeded:
- *   1. Roadmap / Focus Anchors          (protected structural anchors)
- *   2. Semantic Memory (multi-taxonomy)  (reflection, insight, planning, stress-marker, recovery-event, deep-work-session)
- *   3. Episodic Memory                   (timestamped experiences)
- *   4. Relationship Links                (synthetic relational mapping)
- *   5. Active Session Context            (continuity-critical entries)
- *   6. Noisy / Low-Value Entries         (pruning bait)
- * 
- * Stress vectors:
- *   - Echo Chamber Injection (deliberate near-duplicates)
- *   - Temporal Variance (stale vs. recent entries)
- *   - Taxonomy Density Flooding (>MAX_TAXONOMY_DENSITY per taxonomy)
- *   - High Volume (~60+ entries → forces budget overflow)
- *   - Varied importance / decayRate / reliability for scoring differentiation
+ *   Generates a deterministic, bounded synthetic cognition ecosystem for
+ *   D1.3 Runtime Stabilization Validation:
+ *     - Duplicate Cluster Suppression
+ *     - Continuity Weighting & Reinforcement
+ *     - Source Prioritization (system > roadmap > user > episodic > synthetic)
+ *     - Confidence Balancing & Penalisations
+ *     - Active Session Continuity Chains
+ *     - Topic Drift Resistance
+ *     - Replay Validation Scenario Testing
  * 
  * Usage:
  *   npx tsx scripts/seed-memory.ts
  * 
  * Idempotency:
- *   Uses contentHash-based upsert. Re-running will not create duplicates.
+ *   Uses stable deterministic IDs (e.g. "seed-sys-01"). Re-running will upsert
+ *   without duplicating records.
  * 
  * @module seed-memory
  */
 
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import { RetrievalArbitrationHooks } from "../lib/ai/working-memory/arbitration";
+import { RetrievalCandidate } from "../lib/ai/working-memory/types";
 
 const prisma = new PrismaClient();
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers & Determinism ───────────────────────────────────────────────────
+
+const BASE_DATE = new Date("2026-05-27T10:00:00Z");
 
 function computeContentHash(content: string): string {
   return crypto.createHash("sha256").update(content.trim()).digest("hex");
 }
 
 function daysAgo(days: number): Date {
-  const d = new Date();
+  const d = new Date(BASE_DATE);
   d.setDate(d.getDate() - days);
-  d.setHours(10, 0, 0, 0); // Normalize to 10:00 AM for determinism
   return d;
-}
-
-function hoursAgo(hours: number): Date {
-  return new Date(Date.now() - hours * 60 * 60 * 1000);
 }
 
 // ─── Seed Data Definitions ──────────────────────────────────────────────────
 
 interface SeedMemory {
+  id: string;
   content: string;
-  category: string;
-  tags: string[];
-  importance: number;
-  decayRate: number;
-  sourceType: string;
-  visibility: string;
-  taxonomy: string;
-  reliability: number;
-  memoryType: string;
+  sourceType: "system" | "roadmap" | "explicit_user" | "episodic" | "synthetic";
+  memoryType: "anchor" | "continuity" | "episodic" | "inferred" | "reflection" | "planning";
+  taxonomy?: string;
+  category?: string;
+  visibility?: string;
+  tags?: string[];
+  continuityCluster?: string;
+  roadmapPhase?: string;
+  sprintTag?: string;
+  protectedAnchor?: boolean;
+  confidence?: number;
+  reliability?: number;
+  importance?: number;
+  decayRate?: number;
   createdAt: Date;
+  updatedAt: Date;
 }
 
-// ─── 1. ROADMAP / FOCUS ANCHORS ─────────────────────────────────────────────
-// These are structural anchors that MUST survive pruning.
-// They test: protected anchor detection in D1.2-A, roadmap layer in D1.2-E.
-
-const roadmapMemories: SeedMemory[] = [
+// ─── SECTION 1: ARBITRATION DUPLICATE CLUSTERS (20 memories) ──────────────────
+// High-density semantically overlapping candidates to trigger overlap & echo penalties.
+const duplicateClusterMemories: SeedMemory[] = [
+  // Cluster A: "Retrieval Arbitration" (5 memories)
   {
-    content: "Current development roadmap: Phase D — Context Budget Engine. Focus areas: D1.2-A Token Budgeting, D1.2-B Context Scoring, D1.2-C Adaptive Pruning, D1.2-D Diversity Weighting, D1.2-E Final Assembly. Target: bounded cognition runtime.",
-    category: "Roadmap",
-    tags: ["roadmap", "phase-d", "context-budget", "architecture"],
-    importance: 1.0,
-    decayRate: 0.001,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "roadmap",
-    reliability: 1.0,
-    memoryType: "semantic",
-    createdAt: daysAgo(2),
-  },
-  {
-    content: "Executive focus: SOPHIA harus belajar berpikir dengan context secukupnya, bukan mengirim semua memory ke LLM. More context != better cognition. Bounded attention is the goal.",
-    category: "Focus",
-    tags: ["focus", "philosophy", "bounded-cognition"],
+    id: "seed-dup-01",
+    content: "Retrieval arbitration hooks are essential for governing context candidate selection in SOPHIA.",
+    category: "Retrieval",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
     importance: 0.95,
-    decayRate: 0.002,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "roadmap",
+    decayRate: 0.001,
     reliability: 1.0,
-    memoryType: "semantic",
-    createdAt: daysAgo(1),
-  },
-  {
-    content: "Architecture rule: buildSafePipeline() harus pure orchestration-safe function. Tidak boleh Redis write, DB write, atau async side effects. Deterministic cognition governance layer.",
-    category: "Roadmap",
-    tags: ["architecture", "rules", "budget-engine"],
-    importance: 0.90,
-    decayRate: 0.003,
-    sourceType: "chat",
+    confidence: 1.0,
     visibility: "private",
-    taxonomy: "roadmap",
-    reliability: 1.0,
-    memoryType: "semantic",
-    createdAt: daysAgo(3),
-  },
-];
-
-// ─── 2. SEMANTIC MEMORY (Multi-Taxonomy) ────────────────────────────────────
-// Tests: taxonomy diversity balancing (D1.2-D), scoring differentiation (D1.2-B),
-//        density limits in pruning (D1.2-C).
-
-const semanticMemories: SeedMemory[] = [
-  // --- taxonomy: reflection ---
-  {
-    content: "Refleksi: Proses pengembangan SOPHIA membutuhkan keseimbangan antara fitur AI dan stabilitas runtime. Perlu lebih banyak unit test untuk working memory pipeline.",
-    category: "Development",
-    tags: ["reflection", "testing", "stability"],
-    importance: 0.70,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(5),
-  },
-  {
-    content: "Refleksi: Belajar dari kesalahan optimistic locking yang menyebabkan race condition di Redis. Solusi: Lua scripting untuk atomic versioned write.",
-    category: "Development",
-    tags: ["reflection", "redis", "concurrency"],
-    importance: 0.75,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(10),
-  },
-  {
-    content: "Refleksi: Penggunaan FSM untuk working memory lifecycle terbukti efektif mencegah invalid state transitions. Pattern ini bisa dipakai di subsystem lain.",
-    category: "Development",
-    tags: ["reflection", "fsm", "architecture"],
-    importance: 0.65,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(15),
-  },
-
-  // --- taxonomy: insight ---
-  {
-    content: "Insight: Token estimation menggunakan heuristik 4 char/token + correction factors menghasilkan akurasi ~90% dibanding BPE tokenizer. Cukup untuk governance layer.",
-    category: "Research",
-    tags: ["insight", "tokenization", "heuristics"],
-    importance: 0.80,
-    decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(4),
-  },
-  {
-    content: "Insight: Maximal Marginal Relevance (MMR) dengan lambda 0.65 memberikan balance optimal antara relevance dan diversity untuk context retrieval.",
-    category: "Research",
-    tags: ["insight", "mmr", "retrieval"],
-    importance: 0.85,
-    decayRate: 0.01,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.95,
-    memoryType: "semantic",
-    createdAt: daysAgo(7),
-  },
-  {
-    content: "Insight: Google text-embedding-004 menghasilkan vektor 768 dimensi. Cosine similarity threshold 0.25 sudah cukup untuk initial candidate filtering.",
-    category: "Research",
-    tags: ["insight", "embedding", "similarity"],
-    importance: 0.75,
-    decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(12),
-  },
-
-  // --- taxonomy: planning ---
-  {
-    content: "Planning: Setelah D1.2-E selesai, langkah selanjutnya adalah D1.3 — Retrieval Intelligence layer. Akan menambahkan query rewriting dan adaptive retrieval strategies.",
-    category: "Development",
-    tags: ["planning", "d1.3", "retrieval"],
-    importance: 0.80,
-    decayRate: 0.01,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "planning",
-    reliability: 0.85,
-    memoryType: "semantic",
     createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
   },
   {
-    content: "Planning: Perlu implementasi monitoring dashboard untuk observability metrics dari working memory pipeline. Target: real-time budget pressure visualization.",
-    category: "Development",
-    tags: ["planning", "monitoring", "observability"],
-    importance: 0.70,
-    decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
+    id: "seed-dup-02",
+    content: "Retrieval arbitration hooks are crucial for governing context candidate selection in SOPHIA, allowing developers to manage context length and avoid duplicate nodes in the attention window.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
     taxonomy: "planning",
-    reliability: 0.80,
-    memoryType: "semantic",
-    createdAt: daysAgo(6),
-  },
-
-  // --- taxonomy: stress-marker ---
-  {
-    content: "Stress marker: Deadline tugas Basis Data besok jam 23:59. Masih perlu menyelesaikan normalisasi tabel dan ER diagram. Tekanan cukup tinggi.",
-    category: "Academics",
-    tags: ["stress", "deadline", "database"],
-    importance: 0.90,
-    decayRate: 0.05,
-    sourceType: "chat",
+    importance: 0.80,
+    decayRate: 0.01,
+    reliability: 0.90,
+    confidence: 0.90,
     visibility: "private",
-    taxonomy: "stress-marker",
-    reliability: 0.85,
-    memoryType: "episodic",
-    createdAt: daysAgo(1),
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
   },
   {
-    content: "Stress marker: Rapat organisasi bersamaan dengan sesi deep work. Context switching yang terlalu sering menurunkan fokus secara signifikan.",
-    category: "Organization",
-    tags: ["stress", "context-switching", "organization"],
+    id: "seed-dup-03",
+    content: "Retrieval arbitration hooks are important for governing context candidate selection in SOPHIA.",
+    category: "Retrieval",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
     importance: 0.75,
+    decayRate: 0.02,
+    reliability: 0.85,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-dup-04",
+    content: "Retrieval arbitration hooks are required for governing context candidate selection in SOPHIA, providing a bounded cognitive attention span.",
+    category: "Retrieval",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.70,
+    decayRate: 0.03,
+    reliability: 0.80,
+    confidence: 0.75,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-dup-05",
+    content: "Retrieval arbitration hooks are needed for governing context candidate selection in SOPHIA.",
+    category: "Retrieval",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.65,
     decayRate: 0.04,
-    sourceType: "chat",
+    reliability: 0.60,
+    confidence: 0.50,
     visibility: "private",
-    taxonomy: "stress-marker",
-    reliability: 0.80,
-    memoryType: "episodic",
-    createdAt: daysAgo(3),
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
   },
 
-  // --- taxonomy: recovery-event ---
+  // Cluster B: "Deterministic Cognition" (5 memories)
   {
-    content: "Recovery: Sesi workout pagi ini sangat efektif. 30 menit jogging + 20 menit stretching. Fokus siang hari meningkat signifikan setelahnya.",
-    category: "Health",
-    tags: ["recovery", "workout", "focus"],
-    importance: 0.65,
-    decayRate: 0.03,
-    sourceType: "chat",
+    id: "seed-dup-06",
+    content: "SOPHIA requires deterministic-first cognition behavior to guarantee predictable execution flows.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 0.98,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
     visibility: "private",
-    taxonomy: "recovery-event",
-    reliability: 0.90,
-    memoryType: "episodic",
-    createdAt: daysAgo(2),
-  },
-
-  // --- taxonomy: deep-work-session ---
-  {
-    content: "Deep work session: 3 jam coding tanpa distraksi untuk implementasi D1.2-C Adaptive Pruning. Berhasil menyelesaikan 5-stage escalation pipeline. Produktivitas sangat tinggi.",
-    category: "Development",
-    tags: ["deep-work", "d1.2-c", "pruning"],
-    importance: 0.85,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "deep-work-session",
-    reliability: 0.95,
-    memoryType: "episodic",
-    createdAt: daysAgo(4),
-  },
-  {
-    content: "Deep work session: 2 jam riset tentang transformer attention mechanisms untuk memahami bounded cognition patterns. Notes disimpan di Notion.",
-    category: "Research",
-    tags: ["deep-work", "research", "attention"],
-    importance: 0.70,
-    decayRate: 0.025,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "deep-work-session",
-    reliability: 0.85,
-    memoryType: "episodic",
-    createdAt: daysAgo(8),
-  },
-];
-
-// ─── 3. EPISODIC MEMORY ─────────────────────────────────────────────────────
-// Tests: temporal weighting (D1.2-D), decay calculation (D1.2-B),
-//        historical layer in assembly (D1.2-E).
-
-const episodicMemories: SeedMemory[] = [
-  {
-    content: "Hari ini menghadiri kuliah Sistem Operasi tentang process scheduling. Materi yang menarik tapi cukup berat. Perlu review ulang sebelum UTS.",
-    category: "Academics",
-    tags: ["lecture", "operating-systems", "scheduling"],
-    importance: 0.60,
-    decayRate: 0.03,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "episodic",
     createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
   },
   {
-    content: "Meeting dengan tim Hima untuk diskusi program kerja semester depan. Keputusan: fokus ke workshop coding dan mentoring untuk mahasiswa baru.",
-    category: "Organization",
-    tags: ["meeting", "hima", "program-kerja"],
-    importance: 0.65,
-    decayRate: 0.03,
-    sourceType: "chat",
+    id: "seed-dup-07",
+    content: "SOPHIA requires deterministic-first cognition behavior to ensure predictable execution flows.",
+    category: "Architecture",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    importance: 0.85,
+    decayRate: 0.005,
+    reliability: 0.95,
+    confidence: 0.95,
     visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.80,
-    memoryType: "episodic",
-    createdAt: daysAgo(3),
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
   },
   {
-    content: "Ngobrol dengan dosen pembimbing tentang topik skripsi. Disarankan untuk explore area cognitive computing atau AI-assisted productivity systems.",
-    category: "Academics",
-    tags: ["advisor", "thesis", "discussion"],
+    id: "seed-dup-08",
+    content: "SOPHIA requires deterministic-first cognition behavior to secure predictable execution flows.",
+    category: "Architecture",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
     importance: 0.80,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
+    decayRate: 0.015,
     reliability: 0.90,
-    memoryType: "episodic",
-    createdAt: daysAgo(5),
+    confidence: 0.85,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
   },
   {
-    content: "Nonton video conference talk tentang context window management di large language models. Sangat relevan dengan arsitektur SOPHIA.",
-    category: "Research",
-    tags: ["conference", "llm", "context-window"],
-    importance: 0.70,
-    decayRate: 0.025,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.85,
+    id: "seed-dup-09",
+    content: "SOPHIA requires deterministic-first cognition behavior to maintain predictable execution flows.",
+    category: "Architecture",
+    sourceType: "episodic",
     memoryType: "episodic",
-    createdAt: daysAgo(7),
-  },
-  // Stale episodic (30+ days old — should have very low temporal weight)
-  {
-    content: "Mengerjakan tugas pemrograman web semester lalu. Membuat CRUD sederhana dengan Express.js dan MongoDB. Sudah selesai dan dikumpulkan.",
-    category: "Academics",
-    tags: ["assignment", "web-dev", "old"],
-    importance: 0.40,
-    decayRate: 0.05,
-    sourceType: "chat",
-    visibility: "private",
     taxonomy: "reflection",
+    importance: 0.75,
+    decayRate: 0.025,
+    reliability: 0.80,
+    confidence: 0.70,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-dup-10",
+    content: "SOPHIA requires deterministic-first cognition behavior to provide predictable execution flows.",
+    category: "Architecture",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.70,
+    decayRate: 0.035,
     reliability: 0.70,
-    memoryType: "episodic",
-    createdAt: daysAgo(45),
-  },
-  {
-    content: "Ikut hackathon kampus bulan lalu. Tim kami membuat aplikasi task management. Menang kategori Best UI/UX.",
-    category: "Academics",
-    tags: ["hackathon", "competition", "old"],
-    importance: 0.55,
-    decayRate: 0.04,
-    sourceType: "chat",
+    confidence: 0.60,
     visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.80,
-    memoryType: "episodic",
-    createdAt: daysAgo(35),
-  },
-];
-
-// ─── 4. RELATIONSHIP LINKS ──────────────────────────────────────────────────
-// Tests: source diversity balancing (D1.2-D), relationship_link scoring (D1.2-B),
-//        semantic layer partition in assembly (D1.2-E).
-
-const relationshipMemories: SeedMemory[] = [
-  {
-    content: "Relasi: Topik 'bounded cognition' berkaitan erat dengan 'token budgeting' dan 'context pruning'. Ketiga konsep ini membentuk fondasi D1.2.",
-    category: "Semantic Relations",
-    tags: ["relation", "bounded-cognition", "budgeting"],
-    importance: 0.80,
-    decayRate: 0.01,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(3),
-  },
-  {
-    content: "Relasi: Stress markers pada cognitive profile berkorelasi dengan penurunan productivityConsistency. Pattern ini konsisten selama 2 minggu terakhir.",
-    category: "Behavioral Profile",
-    tags: ["relation", "stress", "productivity"],
-    importance: 0.75,
-    decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(5),
-  },
-  {
-    content: "Relasi: Deep work sessions yang dilakukan pagi hari (08:00-11:00) menghasilkan output 40% lebih tinggi dibanding sesi sore hari.",
-    category: "Behavioral Profile",
-    tags: ["relation", "deep-work", "timing"],
-    importance: 0.70,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.80,
-    memoryType: "semantic",
     createdAt: daysAgo(8),
+    updatedAt: daysAgo(8),
   },
-  {
-    content: "Relasi: Penggunaan FSM pattern di working memory terkait dengan reliability improvement di orchestration layer. Dependency graph: FSM → store → cleanup.",
-    category: "Semantic Relations",
-    tags: ["relation", "fsm", "architecture"],
-    importance: 0.65,
-    decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(10),
-  },
-];
 
-// ─── 5. ACTIVE SESSION CONTEXT ──────────────────────────────────────────────
-// Tests: continuity scoring boost (D1.2-B), continuity protection (D1.2-A/C),
-//        continuity layer in assembly (D1.2-E).
-
-const activeSessionMemories: SeedMemory[] = [
+  // Cluster C: "Weighted Governance" (5 memories)
   {
-    content: "Sesi aktif: Sedang mengerjakan implementasi seed-memory.ts untuk cognition runtime testing. Target: 60+ entries covering all 6 memory categories.",
-    category: "Development",
-    tags: ["active-session", "seed-memory", "current"],
-    importance: 1.0,
-    decayRate: 0.001,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "planning",
-    reliability: 1.0,
-    memoryType: "episodic",
-    createdAt: hoursAgo(1),
-  },
-  {
-    content: "Sesi aktif: Konteks percakapan terakhir — diskusi tentang D1.2-E Final Context Assembly dan Option A structural truncation strategy.",
-    category: "Development",
-    tags: ["active-session", "d1.2-e", "assembly"],
-    importance: 0.95,
-    decayRate: 0.001,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "planning",
-    reliability: 1.0,
-    memoryType: "episodic",
-    createdAt: hoursAgo(2),
-  },
-  {
-    content: "Sesi aktif: Perlu memastikan seed data kompatibel dengan Prisma schema, Redis working memory state, dan seluruh pipeline D1.2.",
-    category: "Development",
-    tags: ["active-session", "compatibility", "pipeline"],
+    id: "seed-dup-11",
+    content: "Weighted governance aggregation calculates final candidate scores based on semantic, continuity, and source priority.",
+    category: "Governance",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
     importance: 0.90,
     decayRate: 0.002,
-    sourceType: "chat",
+    reliability: 1.0,
+    confidence: 1.0,
     visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-dup-12",
+    content: "Weighted governance aggregation determines final candidate scores based on semantic, continuity, and source priority.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
     taxonomy: "planning",
-    reliability: 0.95,
-    memoryType: "episodic",
-    createdAt: hoursAgo(3),
-  },
-];
-
-// ─── 6. NOISY / LOW-VALUE ENTRIES ───────────────────────────────────────────
-// Tests: low-score pruning threshold (D1.2-A step 2 score<0.15),
-//        category density limits (D1.2-A step 3b).
-// These SHOULD be pruned under budget pressure.
-
-const noisyMemories: SeedMemory[] = [
-  {
-    content: "Random thought: Cuaca hari ini mendung. Mungkin akan hujan nanti sore.",
-    category: "Random",
-    tags: ["noise", "weather"],
-    importance: 0.10,
-    decayRate: 0.10,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.50,
-    memoryType: "episodic",
-    createdAt: daysAgo(20),
-  },
-  {
-    content: "Tadi makan nasi goreng di kantin. Rasanya biasa saja.",
-    category: "Random",
-    tags: ["noise", "food"],
-    importance: 0.05,
-    decayRate: 0.10,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.40,
-    memoryType: "episodic",
-    createdAt: daysAgo(25),
-  },
-  {
-    content: "Catatan: Password WiFi kampus sudah diganti lagi. Harus tanya ke bagian IT.",
-    category: "Random",
-    tags: ["noise", "wifi", "mundane"],
-    importance: 0.15,
-    decayRate: 0.08,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.50,
-    memoryType: "episodic",
-    createdAt: daysAgo(18),
-  },
-  {
-    content: "Ada promo di coffee shop depan kampus. Americano cuma 15rb.",
-    category: "Random",
-    tags: ["noise", "promo", "coffee"],
-    importance: 0.08,
-    decayRate: 0.10,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.30,
-    memoryType: "episodic",
-    createdAt: daysAgo(30),
-  },
-  {
-    content: "Teman bilang ada film baru yang bagus. Mungkin nonton akhir pekan ini.",
-    category: "Random",
-    tags: ["noise", "movie", "social"],
-    importance: 0.10,
-    decayRate: 0.08,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.40,
-    memoryType: "episodic",
-    createdAt: daysAgo(14),
-  },
-  {
-    content: "Printer di perpustakaan error lagi. Sudah lapor ke petugas tapi belum diperbaiki.",
-    category: "Random",
-    tags: ["noise", "printer", "complaint"],
-    importance: 0.12,
-    decayRate: 0.09,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.45,
-    memoryType: "episodic",
-    createdAt: daysAgo(22),
-  },
-  {
-    content: "Hari ini antrean di fotokopi panjang sekali. Harus datang lebih pagi besok.",
-    category: "Random",
-    tags: ["noise", "queue", "mundane"],
-    importance: 0.05,
-    decayRate: 0.10,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.35,
-    memoryType: "episodic",
-    createdAt: daysAgo(28),
-  },
-  {
-    content: "Bus kampus terlambat 20 menit hari ini. Terpaksa naik ojol.",
-    category: "Random",
-    tags: ["noise", "transport", "mundane"],
-    importance: 0.08,
-    decayRate: 0.10,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.40,
-    memoryType: "episodic",
-    createdAt: daysAgo(16),
-  },
-];
-
-// ─── 7. ECHO CHAMBER INJECTION ──────────────────────────────────────────────
-// Deliberate near-duplicates with slightly different wording.
-// Tests: duplicate detection (word overlap >0.70) in D1.2-A step 3a,
-//        echo prevention in D1.2-D phase 4.
-
-const echoChamberMemories: SeedMemory[] = [
-  // Near-duplicate pair 1: bounded cognition theme
-  {
-    content: "SOPHIA harus belajar berpikir dengan context yang cukup, bukan mengirim semua memory ke reasoning engine. Bounded cognition adalah prinsip utama.",
-    category: "Development",
-    tags: ["echo", "bounded-cognition", "duplicate-1a"],
     importance: 0.85,
-    decayRate: 0.01,
-    sourceType: "chat",
+    decayRate: 0.008,
+    reliability: 0.95,
+    confidence: 0.95,
     visibility: "private",
-    taxonomy: "insight",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(4),
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
   },
   {
-    content: "Prinsip utama SOPHIA: berpikir dengan context secukupnya. Jangan kirim semua memory ke reasoning engine. Bounded cognition harus dijaga.",
-    category: "Development",
-    tags: ["echo", "bounded-cognition", "duplicate-1b"],
-    importance: 0.80,
-    decayRate: 0.01,
-    sourceType: "chat",
-    visibility: "private",
+    id: "seed-dup-13",
+    content: "Weighted governance aggregation computes final candidate scores based on semantic, continuity, and source priority.",
+    category: "Governance",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
     taxonomy: "insight",
+    importance: 0.78,
+    decayRate: 0.012,
+    reliability: 0.90,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-dup-14",
+    content: "Weighted governance aggregation evaluates final candidate scores based on semantic, continuity, and source priority.",
+    category: "Governance",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.72,
+    decayRate: 0.022,
     reliability: 0.85,
-    memoryType: "semantic",
+    confidence: 0.75,
+    visibility: "private",
     createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
+  },
+  {
+    id: "seed-dup-15",
+    content: "Weighted governance aggregation establishes final candidate scores based on semantic, continuity, and source priority.",
+    category: "Governance",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.68,
+    decayRate: 0.032,
+    reliability: 0.65,
+    confidence: 0.60,
+    visibility: "private",
+    createdAt: daysAgo(9),
+    updatedAt: daysAgo(9),
   },
 
-  // Near-duplicate pair 2: pruning theme
+  // Cluster D: "Memory Selection & Continuity" (5 memories)
   {
-    content: "Adaptive pruning harus deterministic, explainable, observable, dan bounded. Tidak boleh ada hidden truncation atau probabilistic dropping dalam cognition pipeline.",
-    category: "Development",
-    tags: ["echo", "pruning", "duplicate-2a"],
-    importance: 0.75,
-    decayRate: 0.015,
-    sourceType: "chat",
+    id: "seed-dup-16",
+    content: "Memory selection preserves context continuity across multi-turn user conversation threads.",
+    category: "Testing",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 0.92,
+    decayRate: 0.002,
+    reliability: 1.0,
+    confidence: 1.0,
     visibility: "private",
-    taxonomy: "planning",
-    reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(5),
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
   },
   {
-    content: "Pruning di cognition pipeline harus deterministic dan explainable. Bounded dan observable. Jangan gunakan hidden truncation ataupun probabilistic dropping.",
-    category: "Development",
-    tags: ["echo", "pruning", "duplicate-2b"],
+    id: "seed-dup-17",
+    content: "Memory selection guarantees context continuity across multi-turn user conversation threads.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    importance: 0.88,
+    decayRate: 0.007,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-dup-18",
+    content: "Memory selection maintains context continuity across multi-turn user conversation threads.",
+    category: "Testing",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
+    importance: 0.84,
+    decayRate: 0.015,
+    reliability: 0.90,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-dup-19",
+    content: "Memory selection supports context continuity across multi-turn user conversation threads.",
+    category: "Testing",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.78,
+    decayRate: 0.025,
+    reliability: 0.80,
+    confidence: 0.70,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-dup-20",
+    content: "Memory selection tracks context continuity across multi-turn user conversation threads.",
+    category: "Testing",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.70,
+    decayRate: 0.035,
+    reliability: 0.60,
+    confidence: 0.50,
+    visibility: "private",
+    createdAt: daysAgo(7),
+    updatedAt: daysAgo(7),
+  },
+];
+
+// ─── SECTION 2: SYNTHETIC INFERENCE MEMORIES (12 memories) ──────────────────
+// Low-trust inferred/synthetic memories to verify ConfidenceBalancer & penalties.
+const syntheticInferenceMemories: SeedMemory[] = [
+  {
+    id: "seed-synth-01",
+    content: "Synthetic inference: User may prefer lavender accent theme based on high productivity intensity sessions.",
+    category: "Focus",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    continuityCluster: "theme-preferences",
+    importance: 0.50,
+    decayRate: 0.05,
+    reliability: 0.40,
+    confidence: 0.40,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-synth-02",
+    content: "Synthetic inference: Hypothetical cognitive limits could trigger early pruning scaling adjustments.",
+    category: "Architecture",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.45,
+    decayRate: 0.06,
+    reliability: 0.30,
+    confidence: 0.35,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-synth-03",
+    content: "Synthetic inference: User might require lower cognitive thresholds during high organization deadlines.",
+    category: "Academics",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.55,
+    decayRate: 0.04,
+    reliability: 0.40,
+    confidence: 0.45,
+    visibility: "private",
+    createdAt: daysAgo(7),
+    updatedAt: daysAgo(7),
+  },
+  {
+    id: "seed-synth-04",
+    content: "Synthetic inference: Speculative future roadmap capabilities could include recursive feedback systems.",
+    category: "Roadmap",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.40,
+    decayRate: 0.08,
+    reliability: 0.30,
+    confidence: 0.30,
+    visibility: "private",
+    createdAt: daysAgo(9),
+    updatedAt: daysAgo(9),
+  },
+  {
+    id: "seed-synth-05",
+    content: "Synthetic inference: Automatic Do-Not-Disturb calendar sync focus boosts productivity by ~12%.",
+    category: "Focus",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    continuityCluster: "focus-rhythms",
+    importance: 0.60,
+    decayRate: 0.03,
+    reliability: 0.50,
+    confidence: 0.50,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-synth-06",
+    content: "Synthetic inference: Deep work timing preferences lean toward early mornings based on workout recovery events.",
+    category: "Focus",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    continuityCluster: "focus-rhythms",
+    importance: 0.58,
+    decayRate: 0.03,
+    reliability: 0.45,
+    confidence: 0.48,
+    visibility: "private",
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
+  },
+  {
+    id: "seed-synth-07",
+    content: "Synthetic inference: User could benefit from strict temporal decay adjustments during sprint migrations.",
+    category: "Retrieval",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.35,
+    decayRate: 0.07,
+    reliability: 0.30,
+    confidence: 0.25,
+    visibility: "private",
+    createdAt: daysAgo(12),
+    updatedAt: daysAgo(12),
+  },
+  {
+    id: "seed-synth-08",
+    content: "Synthetic inference: Inferred user focus shifts towards backend scaling and DB query tuning options.",
+    category: "Retrieval",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.52,
+    decayRate: 0.04,
+    reliability: 0.40,
+    confidence: 0.42,
+    visibility: "private",
+    createdAt: daysAgo(15),
+    updatedAt: daysAgo(15),
+  },
+  {
+    id: "seed-synth-09",
+    content: "Synthetic inference: Hypothetical cognitive model additions may require extra token staging buffer size.",
+    category: "Architecture",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.42,
+    decayRate: 0.05,
+    reliability: 0.35,
+    confidence: 0.32,
+    visibility: "private",
+    createdAt: daysAgo(20),
+    updatedAt: daysAgo(20),
+  },
+  {
+    id: "seed-synth-10",
+    content: "Synthetic inference: User productivity intensity might decrease on Friday afternoons due to fatigue build.",
+    category: "Focus",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    continuityCluster: "focus-rhythms",
+    importance: 0.48,
+    decayRate: 0.05,
+    reliability: 0.40,
+    confidence: 0.38,
+    visibility: "private",
+    createdAt: daysAgo(11),
+    updatedAt: daysAgo(11),
+  },
+  {
+    id: "seed-synth-11",
+    content: "Synthetic inference: Speculative outline suggests calendar categorisation needs automatic tagging tools.",
+    category: "Retrieval",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.30,
+    decayRate: 0.09,
+    reliability: 0.25,
+    confidence: 0.20,
+    visibility: "private",
+    createdAt: daysAgo(25),
+    updatedAt: daysAgo(25),
+  },
+  {
+    id: "seed-synth-12",
+    content: "Synthetic inference: Speculative cognitive maps show strong links between task completion and physical health.",
+    category: "Focus",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    continuityCluster: "focus-rhythms",
+    importance: 0.54,
+    decayRate: 0.03,
+    reliability: 0.40,
+    confidence: 0.44,
+    visibility: "private",
+    createdAt: daysAgo(8),
+    updatedAt: daysAgo(8),
+  },
+];
+
+// ─── SECTION 3: ACTIVE SESSION CONTINUITY CHAINS (18 memories) ───────────────
+// Chains of linked memories to check continuity reinforcement and preservation.
+const continuityChainMemories: SeedMemory[] = [
+  // Chain A: "D1.3 Validation" (6 memories)
+  {
+    id: "seed-cont-01",
+    content: "Continuity Chain: We need to write automated scenarios for testing D1.3 stabilization.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.90,
+    decayRate: 0.001,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-cont-02",
+    content: "Continuity Chain: D1.3 validation scenarios must assert duplicate suppression effectiveness.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.88,
+    decayRate: 0.002,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-cont-03",
+    content: "Continuity Chain: Scenarios should load duplicate cluster sets and verify resulting final scores.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.86,
+    decayRate: 0.003,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-cont-04",
+    content: "Continuity Chain: We observed duplicate scaling factors correctly penalisng overlapping content.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.84,
+    decayRate: 0.004,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-cont-05",
+    content: "Continuity Chain: Debugging reports show tie-breaker cascade prevents ranking oscillations during validations.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.82,
+    decayRate: 0.005,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-cont-06",
+    content: "Continuity Chain: Replay testing scenario will verify deterministic guardrails output matching footprint hash.",
+    category: "Retrieval",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "d13-validation",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.80,
+    decayRate: 0.006,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+
+  // Chain B: "Arbitration Stabilization" (6 memories)
+  {
+    id: "seed-cont-07",
+    content: "Stabilization: Initiated testing for arbitration stability across multiple concurrent sessions.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.92,
+    decayRate: 0.001,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-cont-08",
+    content: "Stabilization: Stability tests require resolving all ties deterministically via cascade checks.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.90,
+    decayRate: 0.002,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-cont-09",
+    content: "Stabilization: The 8-stage tie-break flow is essential to maintain execution stability under high load.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.88,
+    decayRate: 0.003,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-cont-10",
+    content: "Stabilization: Discovered that lexicographical fallback resolves identical score structures during replay tests.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.86,
+    decayRate: 0.004,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-cont-11",
+    content: "Stabilization: Monitored score variance stats to check for sudden ranking changes under pressure.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.84,
+    decayRate: 0.005,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-cont-12",
+    content: "Stabilization: Completed initial replay validation testing with zero variance in final trace outputs.",
+    category: "Governance",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "arbitration-stabilization",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.82,
+    decayRate: 0.006,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+
+  // Chain C: "Replay Testing" (6 memories)
+  {
+    id: "seed-cont-13",
+    content: "Replay Flow: Configured deterministic replay test suite in context-arbitration tests.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.91,
+    decayRate: 0.001,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-cont-14",
+    content: "Replay Flow: Replays must generate consistent regression snapshots from candidate pools.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.89,
+    decayRate: 0.002,
+    reliability: 0.95,
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-cont-15",
+    content: "Replay Flow: We assert that identical input candidates result in the exact same footprint hash.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.87,
+    decayRate: 0.003,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-cont-16",
+    content: "Replay Flow: Replay testing successfully flags scoring formula changes or weighting anomalies.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.85,
+    decayRate: 0.004,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-cont-17",
+    content: "Replay Flow: Stability guardrails verify footprint snapshots automatically on staging runs.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.83,
+    decayRate: 0.005,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-cont-18",
+    content: "Replay Flow: Asserted that changing even one candidate relevance score breaks the replay hash matches.",
+    category: "Testing",
+    sourceType: "roadmap",
+    memoryType: "planning",
+    taxonomy: "planning",
+    continuityCluster: "replay-suite",
+    roadmapPhase: "phase-d",
+    sprintTag: "sprint-1",
+    importance: 0.81,
+    decayRate: 0.006,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+];
+
+// ─── SECTION 4: TOPIC DRIFT CANDIDATES (20 memories) ──────────────────────────
+// Engineering topics not directly related to our active roadmap focus (D1.3/Phase D).
+const topicDriftMemories: SeedMemory[] = [
+  // Docker (3 memories)
+  {
+    id: "seed-drift-01",
+    content: "Drift Topic: Optimized Docker multi-stage builds to reduce node application image size from 1GB to 120MB.",
+    category: "Docker",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.65,
+    decayRate: 0.02,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-drift-02",
+    content: "Drift Topic: Docker caching layer improves build step speed significantly in CI/CD pipeline runs.",
+    category: "Docker",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
+    importance: 0.60,
+    decayRate: 0.03,
+    reliability: 0.85,
+    confidence: 0.85,
+    visibility: "private",
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
+  },
+  {
+    id: "seed-drift-03",
+    content: "Drift Topic: Configured Docker Compose configurations for local database scaling and replicas replication.",
+    category: "Docker",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.55,
+    decayRate: 0.04,
+    reliability: 0.50,
+    confidence: 0.50,
+    visibility: "private",
+    createdAt: daysAgo(10),
+    updatedAt: daysAgo(10),
+  },
+
+  // Postgres (3 memories)
+  {
+    id: "seed-drift-04",
+    content: "Drift Topic: PostgreSQL indexes are critical to optimize query lookup times on large user table schemas.",
+    category: "Postgres",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
     importance: 0.70,
     decayRate: 0.015,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "planning",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(9),
-  },
-
-  // Near-duplicate pair 3: assembly theme
-  {
-    content: "Final context assembly menggunakan 7-layer grouping: system, continuity, identity, roadmap, semantic, historical, auxiliary. Continuity-first ordering.",
-    category: "Development",
-    tags: ["echo", "assembly", "duplicate-3a"],
-    importance: 0.80,
-    decayRate: 0.01,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
     reliability: 0.90,
-    memoryType: "semantic",
-    createdAt: daysAgo(3),
-  },
-  {
-    content: "Assembly layer SOPHIA: system, continuity, identity, roadmap, semantic, historical, auxiliary. Ordering menggunakan continuity-first approach dengan 7 layer grouping.",
-    category: "Development",
-    tags: ["echo", "assembly", "duplicate-3b"],
-    importance: 0.75,
-    decayRate: 0.015,
-    sourceType: "chat",
+    confidence: 0.90,
     visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(7),
-  },
-];
-
-// ─── 8. TAXONOMY DENSITY FLOODING ───────────────────────────────────────────
-// Excessive entries in a single taxonomy to test D1.2-D MAX_TAXONOMY_DENSITY cap.
-// All in taxonomy: "reflection" — should exceed density limit (cap=2).
-
-const taxonomyFloodMemories: SeedMemory[] = [
-  {
-    content: "Taxonomy flood test 1: Penggunaan TypeScript strict mode membantu menangkap banyak type errors di compile time. Sangat direkomendasikan untuk project besar.",
-    category: "Development",
-    tags: ["flood", "typescript", "reflection"],
-    importance: 0.50,
-    decayRate: 0.03,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.75,
-    memoryType: "semantic",
-    createdAt: daysAgo(11),
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
   },
   {
-    content: "Taxonomy flood test 2: Prisma ORM cukup powerful untuk PostgreSQL. Schema-first approach memudahkan migrasi dan type safety.",
-    category: "Development",
-    tags: ["flood", "prisma", "reflection"],
-    importance: 0.55,
-    decayRate: 0.025,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.80,
-    memoryType: "semantic",
-    createdAt: daysAgo(13),
-  },
-  {
-    content: "Taxonomy flood test 3: Redis sebagai ephemeral state store sangat cocok untuk working memory. TTL-based cleanup mencegah memory leak.",
-    category: "Development",
-    tags: ["flood", "redis", "reflection"],
-    importance: 0.60,
-    decayRate: 0.02,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(9),
-  },
-  {
-    content: "Taxonomy flood test 4: Next.js App Router dengan server components memberikan performa rendering yang lebih baik dibanding Pages Router.",
-    category: "Development",
-    tags: ["flood", "nextjs", "reflection"],
-    importance: 0.45,
-    decayRate: 0.03,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.75,
-    memoryType: "semantic",
-    createdAt: daysAgo(17),
-  },
-  {
-    content: "Taxonomy flood test 5: BullMQ untuk background job processing bekerja dengan baik bersama Redis. Retry mechanism dan dead letter queue sangat membantu.",
-    category: "Development",
-    tags: ["flood", "bullmq", "reflection"],
-    importance: 0.50,
-    decayRate: 0.025,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.80,
-    memoryType: "semantic",
-    createdAt: daysAgo(14),
-  },
-];
-
-// ─── 9. VARIED IMPORTANCE ENTRIES ───────────────────────────────────────────
-// Tests: scoring differentiation under varied importance/reliability.
-// Also adds more sourceType variety for source diversity testing.
-
-const variedImportanceMemories: SeedMemory[] = [
-  // Very high importance, high reliability
-  {
-    content: "Profil Kognitif: Toleransi overload 70%, kualitas pemulihan 50%, konsistensi produktivitas 50%. Deep work timing optimal: 08:00-11:00. Indeks prokrastinasi: rendah.",
-    category: "Behavioral Profile",
-    tags: ["profile", "cognitive", "high-importance"],
-    importance: 1.0,
-    decayRate: 0.005,
-    sourceType: "chat",
-    visibility: "ai-only",
-    taxonomy: "reflection",
-    reliability: 1.0,
-    memoryType: "semantic",
-    createdAt: daysAgo(1),
-  },
-  // Medium importance, medium reliability
-  {
-    content: "Catatan kuliah: Algoritma Dijkstra menggunakan priority queue untuk shortest path. Kompleksitas O((V+E) log V) dengan binary heap.",
-    category: "Academics",
-    tags: ["lecture-note", "algorithm", "dijkstra"],
-    importance: 0.55,
-    decayRate: 0.03,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.85,
-    memoryType: "semantic",
-    createdAt: daysAgo(10),
-  },
-  // Low importance, low reliability — pruning bait
-  {
-    content: "Katanya ada kelas tambahan hari Sabtu tapi belum dikonfirmasi oleh dosen. Informasi belum pasti.",
-    category: "Academics",
-    tags: ["unconfirmed", "rumor", "low-reliability"],
-    importance: 0.20,
-    decayRate: 0.06,
-    sourceType: "chat",
-    visibility: "private",
-    taxonomy: "reflection",
-    reliability: 0.40,
+    id: "seed-drift-05",
+    content: "Drift Topic: We noticed table scan bottlenecks in PostgreSQL prior to creating indexes on memoryNode userId.",
+    category: "Postgres",
+    sourceType: "episodic",
     memoryType: "episodic",
-    createdAt: daysAgo(12),
-  },
-  // Very old, high importance — temporal weight vs importance conflict
-  {
-    content: "Prinsip fundamental software engineering: separation of concerns, single responsibility, dan dependency inversion. Selalu berlaku di semua project.",
-    category: "Research",
-    tags: ["principles", "software-engineering", "timeless"],
-    importance: 0.90,
-    decayRate: 0.005,
-    sourceType: "chat",
+    taxonomy: "reflection",
+    importance: 0.68,
+    decayRate: 0.02,
+    reliability: 0.85,
+    confidence: 0.85,
     visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-drift-06",
+    content: "Drift Topic: Explored pg_stat_activity reports to find locked transactions in production databases.",
+    category: "Postgres",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.58,
+    decayRate: 0.03,
+    reliability: 0.60,
+    confidence: 0.60,
+    visibility: "private",
+    createdAt: daysAgo(9),
+    updatedAt: daysAgo(9),
+  },
+
+  // Redis (3 memories)
+  {
+    id: "seed-drift-07",
+    content: "Drift Topic: Redis cluster pipelining decreases network overhead times by grouping multiple cache writes.",
+    category: "Redis",
+    sourceType: "roadmap",
+    memoryType: "planning",
     taxonomy: "insight",
+    importance: 0.75,
+    decayRate: 0.012,
     reliability: 0.95,
-    memoryType: "semantic",
-    createdAt: daysAgo(60),
+    confidence: 0.95,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-drift-08",
+    content: "Drift Topic: Implemented Redis connection pool limits to prevent socket leak warnings under load.",
+    category: "Redis",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.70,
+    decayRate: 0.018,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(7),
+    updatedAt: daysAgo(7),
+  },
+  {
+    id: "seed-drift-09",
+    content: "Drift Topic: Redis eviction policies like volatile-lru secure memory limits on caching runtimes.",
+    category: "Redis",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.62,
+    decayRate: 0.025,
+    reliability: 0.55,
+    confidence: 0.55,
+    visibility: "private",
+    createdAt: daysAgo(11),
+    updatedAt: daysAgo(11),
+  },
+
+  // CI/CD (3 memories)
+  {
+    id: "seed-drift-10",
+    content: "Drift Topic: CI/CD runner workflows build node images and trigger unit test runs on commit events.",
+    category: "CI/CD",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "reflection",
+    importance: 0.64,
+    decayRate: 0.022,
+    reliability: 0.85,
+    confidence: 0.85,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-drift-11",
+    content: "Drift Topic: Setup caching paths in Github Actions files to save dependency install stages time.",
+    category: "CI/CD",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.59,
+    decayRate: 0.028,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(8),
+    updatedAt: daysAgo(8),
+  },
+  {
+    id: "seed-drift-12",
+    content: "Drift Topic: Automatic security vulnerability dependency checks run in CI pipelines nightly.",
+    category: "CI/CD",
+    sourceType: "synthetic",
+    memoryType: "inferred",
+    taxonomy: "inferred",
+    importance: 0.50,
+    decayRate: 0.04,
+    reliability: 0.50,
+    confidence: 0.50,
+    visibility: "private",
+    createdAt: daysAgo(14),
+    updatedAt: daysAgo(14),
+  },
+
+  // Telemetry (2 memories)
+  {
+    id: "seed-drift-13",
+    content: "Drift Topic: Telemetry metrics compression reduces payload transfer sizes by up to 60%.",
+    category: "Telemetry",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
+    importance: 0.68,
+    decayRate: 0.016,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-drift-14",
+    content: "Drift Topic: OpenTelemetry spans record execution latency across distributed microservice systems.",
+    category: "Telemetry",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.62,
+    decayRate: 0.024,
+    reliability: 0.85,
+    confidence: 0.85,
+    visibility: "private",
+    createdAt: daysAgo(7),
+    updatedAt: daysAgo(7),
+  },
+
+  // Kubernetes (2 memories)
+  {
+    id: "seed-drift-15",
+    content: "Drift Topic: Kubernetes replica deployment strategies ensure high application availability.",
+    category: "Kubernetes",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "reflection",
+    importance: 0.60,
+    decayRate: 0.022,
+    reliability: 0.85,
+    confidence: 0.85,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+  {
+    id: "seed-drift-16",
+    content: "Drift Topic: Configured ingress paths in Kubernetes config map files to route HTTP requests.",
+    category: "Kubernetes",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.56,
+    decayRate: 0.032,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(9),
+    updatedAt: daysAgo(9),
+  },
+
+  // Vector Indexing (2 memories)
+  {
+    id: "seed-drift-17",
+    content: "Drift Topic: Vector indexing using HNSW parameters provides fast approximate nearest neighbor lookups.",
+    category: "Vector",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
+    importance: 0.72,
+    decayRate: 0.015,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-drift-18",
+    content: "Drift Topic: Inverted file index with product quantization optimizes memory storage requirements for vectors.",
+    category: "Vector",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.64,
+    decayRate: 0.025,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
+  },
+
+  // Infra Caching (2 memories)
+  {
+    id: "seed-drift-19",
+    content: "Drift Topic: Infrastructure caching layer decorator intercepts database reads to prevent network latency.",
+    category: "Cache",
+    sourceType: "explicit_user",
+    memoryType: "reflection",
+    taxonomy: "insight",
+    importance: 0.70,
+    decayRate: 0.012,
+    reliability: 0.90,
+    confidence: 0.90,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-drift-20",
+    content: "Drift Topic: Browser session storage cache maintains frontend layout structures during page transitions.",
+    category: "Cache",
+    sourceType: "episodic",
+    memoryType: "episodic",
+    taxonomy: "reflection",
+    importance: 0.58,
+    decayRate: 0.03,
+    reliability: 0.80,
+    confidence: 0.80,
+    visibility: "private",
+    createdAt: daysAgo(8),
+    updatedAt: daysAgo(8),
+  },
+];
+
+// ─── SECTION 5: EXPLICIT SOURCE HIERARCHY SYSTEM ANCHORS & USER MEMORIES ──────
+// Explicit, highly reliable system anchors and user facts that should dominate.
+const trustEcosystemMemories: SeedMemory[] = [
+  // System Anchors (highest trust, sourceType = "system", priority = 1.0)
+  {
+    id: "seed-sys-01",
+    content: "System Rule: A bounded attention context limits maximum staged candidates to 20 nodes.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 1.0,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(1),
+    updatedAt: daysAgo(1),
+  },
+  {
+    id: "seed-sys-02",
+    content: "System Rule: TokenBudgetEngine calculates dynamic allocation percentages to prevent context overflow.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 1.0,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-sys-03",
+    content: "System Rule: ContextDiversityEngine caps duplicate density per taxonomy to balance information.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 0.98,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(3),
+    updatedAt: daysAgo(3),
+  },
+  {
+    id: "seed-sys-04",
+    content: "System Rule: ContextAssemblyEngine packages candidates in top-down hierarchy layers.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 0.98,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-sys-05",
+    content: "System Rule: ArbitrationStabilityGuardrails alerts if continuity dominance ratio exceeds 80%.",
+    category: "Architecture",
+    sourceType: "system",
+    memoryType: "anchor",
+    taxonomy: "anchor",
+    protectedAnchor: true,
+    importance: 0.98,
+    decayRate: 0.001,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(5),
+    updatedAt: daysAgo(5),
+  },
+
+  // Explicit User Facts (strong trust, sourceType = "explicit_user", priority = 0.8)
+  {
+    id: "seed-user-01",
+    content: "User Fact: I prefer dark theme accent lavender and always disable calendar notifications.",
+    category: "Profile",
+    sourceType: "explicit_user",
+    memoryType: "planning",
+    taxonomy: "insight",
+    importance: 0.90,
+    decayRate: 0.002,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(2),
+  },
+  {
+    id: "seed-user-02",
+    content: "User Fact: My prime productivity hours are early mornings between 08:00 and 11:00 AM.",
+    category: "Profile",
+    sourceType: "explicit_user",
+    memoryType: "planning",
+    taxonomy: "insight",
+    importance: 0.90,
+    decayRate: 0.002,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(4),
+    updatedAt: daysAgo(4),
+  },
+  {
+    id: "seed-user-03",
+    content: "User Fact: Current skripsi project revolves around cognitive computing and AI-assisted productivity.",
+    category: "Academics",
+    sourceType: "explicit_user",
+    memoryType: "planning",
+    taxonomy: "insight",
+    importance: 0.88,
+    decayRate: 0.003,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(6),
+    updatedAt: daysAgo(6),
+  },
+  {
+    id: "seed-user-04",
+    content: "User Fact: I run workout recovery routines jogging and stretching morning times to restore focus.",
+    category: "Health",
+    sourceType: "explicit_user",
+    memoryType: "planning",
+    taxonomy: "insight",
+    importance: 0.86,
+    decayRate: 0.004,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(8),
+    updatedAt: daysAgo(8),
+  },
+  {
+    id: "seed-user-05",
+    content: "User Fact: My database assignment ER normalisation deadline is due tomorrow evening.",
+    category: "Academics",
+    sourceType: "explicit_user",
+    memoryType: "planning",
+    taxonomy: "insight",
+    importance: 0.85,
+    decayRate: 0.005,
+    reliability: 1.0,
+    confidence: 1.0,
+    visibility: "private",
+    createdAt: daysAgo(10),
+    updatedAt: daysAgo(10),
   },
 ];
 
 // ─── Aggregate All Seed Data ────────────────────────────────────────────────
 
 const allMemories: SeedMemory[] = [
-  ...roadmapMemories,
-  ...semanticMemories,
-  ...episodicMemories,
-  ...relationshipMemories,
-  ...activeSessionMemories,
-  ...noisyMemories,
-  ...echoChamberMemories,
-  ...taxonomyFloodMemories,
-  ...variedImportanceMemories,
+  ...duplicateClusterMemories,
+  ...syntheticInferenceMemories,
+  ...continuityChainMemories,
+  ...topicDriftMemories,
+  ...trustEcosystemMemories,
 ];
 
 // ─── Main Seed Function ─────────────────────────────────────────────────────
 
 async function main() {
   console.log("═══════════════════════════════════════════════════════════");
-  console.log("  SOPHIA Cognition Runtime — Memory Seed Script");
+  console.log("  SOPHIA Cognition Runtime — Memory Seed Script (D1.3)");
   console.log("═══════════════════════════════════════════════════════════");
   console.log(`  Total entries to seed: ${allMemories.length}`);
   console.log("");
@@ -898,16 +1448,14 @@ async function main() {
   let skipped = 0;
   const categoryStats: Record<string, number> = {};
   const taxonomyStats: Record<string, number> = {};
+  const sourceTypeStats: Record<string, number> = {};
 
   for (const mem of allMemories) {
     const hash = computeContentHash(mem.content);
 
-    // Idempotency: skip if contentHash already exists for this user
-    const existing = await prisma.memoryNode.findFirst({
-      where: {
-        userId: user.id,
-        contentHash: hash,
-      },
+    // Idempotency: skip if static ID already exists
+    const existing = await prisma.memoryNode.findUnique({
+      where: { id: mem.id },
     });
 
     if (existing) {
@@ -915,27 +1463,50 @@ async function main() {
       continue;
     }
 
+    // Build tags array
+    const dbTags: string[] = [];
+    if (mem.sprintTag) dbTags.push(`sprint:${mem.sprintTag}`);
+    if (mem.roadmapPhase) dbTags.push(`phase:${mem.roadmapPhase}`);
+    if (mem.continuityCluster) dbTags.push(`cluster:${mem.continuityCluster}`);
+    if (mem.protectedAnchor) dbTags.push("protected:true");
+    if (mem.confidence !== undefined) dbTags.push(`confidence:${mem.confidence}`);
+    if (mem.tags) {
+      mem.tags.forEach(t => {
+        if (!dbTags.includes(t)) dbTags.push(t);
+      });
+    }
+
+    // Map memoryType cleanly
+    let dbMemoryType = "semantic";
+    if (mem.memoryType === "episodic" || mem.memoryType === "inferred") {
+      dbMemoryType = "episodic";
+    }
+
     await prisma.memoryNode.create({
       data: {
+        id: mem.id,
         content: mem.content,
-        category: mem.category,
-        tags: mem.tags,
-        importance: mem.importance,
-        decayRate: mem.decayRate,
+        category: mem.category || "General",
+        tags: dbTags,
+        importance: mem.importance ?? 1.0,
+        decayRate: mem.decayRate ?? 0.01,
         sourceType: mem.sourceType,
-        visibility: mem.visibility,
-        taxonomy: mem.taxonomy,
+        visibility: mem.visibility || "private",
+        taxonomy: mem.taxonomy || "reflection",
         contentHash: hash,
-        reliability: mem.reliability,
-        memoryType: mem.memoryType,
+        reliability: mem.reliability ?? 1.0,
+        memoryType: dbMemoryType,
         userId: user.id,
         createdAt: mem.createdAt,
       },
     });
 
     created++;
-    categoryStats[mem.category] = (categoryStats[mem.category] || 0) + 1;
-    taxonomyStats[mem.taxonomy] = (taxonomyStats[mem.taxonomy] || 0) + 1;
+    const cat = mem.category || "General";
+    const tax = mem.taxonomy || "reflection";
+    categoryStats[cat] = (categoryStats[cat] || 0) + 1;
+    taxonomyStats[tax] = (taxonomyStats[tax] || 0) + 1;
+    sourceTypeStats[mem.sourceType] = (sourceTypeStats[mem.sourceType] || 0) + 1;
   }
 
   // 4. Print summary report
@@ -946,58 +1517,200 @@ async function main() {
   console.log(`  Total in dataset: ${allMemories.length}`);
   console.log("");
 
-  if (created > 0) {
-    console.log("─── Category Distribution ─────────────────────────────────");
-    for (const [cat, count] of Object.entries(categoryStats).sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${cat.padEnd(25)} ${count}`);
-    }
-    console.log("");
-
-    console.log("─── Taxonomy Distribution ─────────────────────────────────");
-    for (const [tax, count] of Object.entries(taxonomyStats).sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${tax.padEnd(25)} ${count}`);
-    }
-    console.log("");
-  }
-
   // 5. Verify total memory count
   const totalMemories = await prisma.memoryNode.count({
     where: { userId: user.id },
   });
   console.log(`─── Database Verification ─────────────────────────────────`);
   console.log(`  Total MemoryNodes for user: ${totalMemories}`);
-
-  // 6. Stress test readiness check
-  const stressIndicators = {
-    totalEntries: totalMemories,
-    hasDuplicatePairs: echoChamberMemories.length > 0,
-    hasNoisyEntries: noisyMemories.length > 0,
-    hasTaxonomyFlood: taxonomyFloodMemories.length > 0,
-    hasStaleEntries: allMemories.filter(m => {
-      const ageMs = Date.now() - m.createdAt.getTime();
-      return ageMs > 30 * 24 * 60 * 60 * 1000; // >30 days
-    }).length,
-    hasActiveSession: activeSessionMemories.length > 0,
-    hasRoadmapAnchors: roadmapMemories.length > 0,
-    taxonomyCount: new Set(allMemories.map(m => m.taxonomy)).size,
-    categoryCount: new Set(allMemories.map(m => m.category)).size,
-    sourceTypeCount: new Set(allMemories.map(m => m.sourceType)).size,
-  };
-
   console.log("");
-  console.log("─── Stress Test Readiness ─────────────────────────────────");
-  console.log(`  Total entries:          ${stressIndicators.totalEntries}`);
-  console.log(`  Echo chamber pairs:     ${stressIndicators.hasDuplicatePairs ? "✓ Yes" : "✗ No"}`);
-  console.log(`  Noisy entries:          ${stressIndicators.hasNoisyEntries ? "✓ Yes" : "✗ No"}`);
-  console.log(`  Taxonomy flood:         ${stressIndicators.hasTaxonomyFlood ? "✓ Yes" : "✗ No"}`);
-  console.log(`  Stale entries (>30d):   ${stressIndicators.hasStaleEntries}`);
-  console.log(`  Active session:         ${stressIndicators.hasActiveSession ? "✓ Yes" : "✗ No"}`);
-  console.log(`  Roadmap anchors:        ${stressIndicators.hasRoadmapAnchors ? "✓ Yes" : "✗ No"}`);
-  console.log(`  Distinct taxonomies:    ${stressIndicators.taxonomyCount}`);
-  console.log(`  Distinct categories:    ${stressIndicators.categoryCount}`);
-  console.log(`  Distinct sourceTypes:   ${stressIndicators.sourceTypeCount}`);
+
+  // ─── SECTION 9: RUNTIME VALIDATION SCENARIOS ───────────────────────────────
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log("  Executing D1.3 Runtime Stabilization Validation Scenario");
+  console.log("═══════════════════════════════════════════════════════════");
+  
+  // Map our SeedMemory entities into mock RetrievalCandidate records for testing
+  const mockCandidates: RetrievalCandidate[] = allMemories.map(m => {
+    return {
+      id: m.id,
+      content: m.content,
+      category: m.category || "General",
+      sourceType: m.sourceType,
+      taxonomy: m.taxonomy || "reflection",
+      relevanceScore: 80, // Simulated relevance
+      decayedImportance: m.importance ?? 0.90, // Simulated decayed relevance
+      combinedScore: 0,
+      traceReason: "Mock Seed Staging",
+      sprintTag: m.sprintTag,
+      roadmapPhase: m.roadmapPhase,
+      continuityCluster: m.continuityCluster,
+      protectedAnchor: m.protectedAnchor,
+      confidence: m.confidence ?? m.reliability ?? 0.8,
+      reliability: m.reliability ?? 1.0,
+      importance: m.importance ?? 1.0,
+      decayRate: m.decayRate ?? 0.01
+    };
+  });
+
+  let failureCount = 0;
+
+  // Scenario 1: Continuity Persistence
+  console.log("\n  [Scenario 1: Continuity Persistence]");
+  const actResult1 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "Retrieval"
+  });
+  const selectedIds = actResult1.candidates
+    .filter(c => c.arbitrationTrace?.selectionDecision === 'selected')
+    .map(c => c.id);
+  const hasContinuity = selectedIds.some(id => id.includes("seed-cont-"));
+  if (hasContinuity) {
+    console.log("    - Continuity candidates in selection: ✓ YES");
+  } else {
+    console.log("    - Continuity candidates in selection: ❌ NO");
+    failureCount++;
+  }
+
+  // Scenario 2: Duplicate Suppression Stability
+  console.log("\n  [Scenario 2: Duplicate Suppression Stability]");
+  const actResultDup = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "None"
+  });
+  const dupTraces = actResultDup.traces.filter(t => t.candidateId.startsWith("seed-dup-"));
+  const penalizedDups = dupTraces.filter(t => t.duplicatePenalty > 0);
+  const protectedDups = dupTraces.filter(t => 
+    t.candidateId === "seed-dup-01" || 
+    t.candidateId === "seed-dup-06" || 
+    t.candidateId === "seed-dup-11" || 
+    t.candidateId === "seed-dup-16"
+  );
+  const allProtectedSurvive = protectedDups.every(t => t.duplicatePenalty === 0 && t.selectionDecision === 'selected');
+  console.log(`    - Penalized duplicate count: ${penalizedDups.length}/${dupTraces.length - 4}`);
+  console.log(`    - Protected anchors exempt from penalty: ${allProtectedSurvive ? "✓ YES" : "❌ NO"}`);
+  if (allProtectedSurvive && penalizedDups.length > 0) {
+    console.log("    - Duplicate suppression stability test: ✓ PASS");
+  } else {
+    console.log("    - Duplicate suppression stability test: ❌ FAIL");
+    failureCount++;
+  }
+
+  // Scenario 3: Drift Replay Validation
+  console.log("\n  [Scenario 3: Drift Replay and Determinism Validation]");
+  const actResultReplay1 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "Retrieval"
+  });
+  const actResultReplay2 = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "Retrieval"
+  });
+  const replayMatch = actResultReplay1.guardrails.regressionSnapshot === actResultReplay2.guardrails.regressionSnapshot;
+  console.log(`    - Deterministic snapshot replay match: ${replayMatch ? "✓ YES" : "❌ NO"}`);
+  if (replayMatch) {
+    console.log("    - Replay snapshot validation: ✓ PASS");
+  } else {
+    console.log("    - Replay snapshot validation: ❌ FAIL");
+    failureCount++;
+  }
+
+  // Scenario 4: Diversity Health
+  console.log("\n  [Scenario 4: Diversity Health]");
+  const categories = actResult1.candidates
+    .filter(c => c.arbitrationTrace?.selectionDecision === 'selected')
+    .map(c => c.category);
+  const categoryCounts: Record<string, number> = {};
+  categories.forEach(c => { categoryCounts[c] = (categoryCounts[c] || 0) + 1; });
+  const totalSelected = categories.length;
+  let dominantCategoryExists = false;
+  for (const cat in categoryCounts) {
+    const ratio = categoryCounts[cat] / totalSelected;
+    if (ratio > 0.80) dominantCategoryExists = true;
+  }
+  console.log(`    - Diverse category selection: ${!dominantCategoryExists ? "✓ YES" : "❌ NO"}`);
+  if (!dominantCategoryExists) {
+    console.log("    - Diversity health test: ✓ PASS");
+  } else {
+    console.log("    - Diversity health test: ❌ FAIL (A single category dominated >80%)");
+    failureCount++;
+  }
+
+  // Scenario 5: Source Priority Validation
+  console.log("\n  [Scenario 5: Source Priority Validation]");
+  const sysTraces = actResult1.traces.filter(t => t.candidateId.startsWith("seed-sys-"));
+  const synthTraces = actResult1.traces.filter(t => t.candidateId.startsWith("seed-synth-"));
+  const minSysScore = Math.min(...sysTraces.map(t => t.finalScore));
+  const maxSynthScore = Math.max(...synthTraces.map(t => t.finalScore));
+  const priorityOk = minSysScore > maxSynthScore;
+  console.log(`    - System anchors outrank low-trust synthetics: ${priorityOk ? "✓ YES" : "❌ NO"} (min sys: ${minSysScore.toFixed(3)}, max synth: ${maxSynthScore.toFixed(3)})`);
+  if (priorityOk) {
+    console.log("    - Source trust prioritization: ✓ PASS");
+  } else {
+    console.log("    - Source trust prioritization: ❌ FAIL");
+    failureCount++;
+  }
+
+  // Scenario 6: Latency Stability
+  console.log("\n  [Scenario 6: Latency Stability]");
+  const start = performance.now();
+  RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "Retrieval"
+  });
+  const latencyMs = performance.now() - start;
+  const latencyOk = latencyMs < 50;
+  console.log(`    - Arbitration execution time: ${latencyMs.toFixed(2)}ms (<50ms): ${latencyOk ? "✓ YES" : "❌ NO"}`);
+  if (latencyOk) {
+    console.log("    - Latency safety checks: ✓ PASS");
+  } else {
+    console.log("    - Latency safety checks: ❌ FAIL");
+    failureCount++;
+  }
+
+  // Scenario 7: Continuity Lock Detection
+  console.log("\n  [Scenario 7: Continuity Lock Detection]");
+  const actResultLock = RetrievalArbitrationHooks.arbitrate(mockCandidates, {
+    sessionId: "chat_session_default",
+    activeTopic: "Docker"
+  });
+  const selectedDriftIds = actResultLock.candidates
+    .filter(c => c.arbitrationTrace?.selectionDecision === 'selected')
+    .map(c => c.id)
+    .filter(id => id.startsWith("seed-drift-"));
+  const driftSelected = selectedDriftIds.length > 0;
+  console.log(`    - Cognitive pivot (drift candidate selected): ${driftSelected ? "✓ YES" : "❌ NO"}`);
+  if (driftSelected) {
+    console.log("    - Continuity lock avoidance: ✓ PASS");
+  } else {
+    console.log("    - Continuity lock avoidance: ❌ FAIL");
+    failureCount++;
+  }
+
+  // Scenario 8: Guardrail Telemetry Validation
+  console.log("\n  [Scenario 8: Guardrail Telemetry Validation]");
+  const guardrails = actResult1.guardrails;
+  const telemetryOk = guardrails.scoreMean > 0 && guardrails.scoreVariance > 0 && guardrails.regressionSnapshot !== "ar_snap_empty";
+  console.log(`    - Guardrail metrics populated: ${telemetryOk ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Score Mean: ${guardrails.scoreMean}`);
+  console.log(`      - Score Variance: ${guardrails.scoreVariance}`);
+  console.log(`      - Continuity Dominance Ratio: ${(guardrails.continuityDominanceRatio * 100).toFixed(1)}%`);
+  console.log(`      - Regression Snapshot: ${guardrails.regressionSnapshot}`);
+  if (telemetryOk) {
+    console.log("    - Guardrail telemetry validation: ✓ PASS");
+  } else {
+    console.log("    - Guardrail telemetry validation: ❌ FAIL");
+    failureCount++;
+  }
+
   console.log("");
   console.log("═══════════════════════════════════════════════════════════");
+  if (failureCount === 0) {
+    console.log("  ✓ Validation Success. All 8 scenarios passed!");
+  } else {
+    console.error(`  ❌ Validation Failure. ${failureCount} scenarios failed!`);
+    process.exit(1);
+  }
   console.log("  Seed completed. Ready for cognition runtime testing.");
   console.log("═══════════════════════════════════════════════════════════");
 }

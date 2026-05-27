@@ -1,7 +1,7 @@
-import { ContextScoringEngine, SCORING_CONSTANTS } from "../lib/ai/working-memory/scoring";
+import { ContextScoringEngine } from "../lib/ai/working-memory/scoring";
 import { RetrievalCandidate } from "../lib/ai/working-memory/types";
 
-describe("Context Scoring Engine Tests (D1.2-B)", () => {
+describe("Context Scoring Engine Tests (D1.2-B / D1.3 Refactored)", () => {
   const baseCandidate: RetrievalCandidate = {
     id: "mem-1",
     content: "Teknik Deep Work sangat efektif dilakukan di pagi hari.",
@@ -17,37 +17,32 @@ describe("Context Scoring Engine Tests (D1.2-B)", () => {
   describe("Combined Usefulness Score Formula", () => {
     it("should calculate combinedScore cleanly using Weighted Addition", () => {
       // Inputs:
-      // semantic = 0.85
-      // temporal = 0.90
-      // continuity = 0.0 (no match options passed)
-      // confidence = 0.85 * 0.9 (semantic_memory reliability lookup is 0.9) = 0.7650
+      // semanticScore = 0.85
+      // temporalWeight = 0.90
+      // continuityWeight = 0.3 (taxonomy is "insight" -> recent_context_match boost)
+      // sourceScore (semantic_memory) = 0.5
+      // usefulnessScore = 0.15 (taxonomy is "insight")
       //
-      // combinedScoreBeforeMultiplier = 0.85 * 0.4 + 0.90 * 0.2 + 0.3 * 0.2 + 0.7650 * 0.2
-      //                               = 0.34 + 0.18 + 0.06 + 0.153 = 0.7330
-      // sourceMultiplier (semantic_memory) = 1.0
-      // finalCombinedScore = 0.7330 * 1.0 = 0.7330
+      // Score calculation:
+      // 0.85 * 0.30 (semantic) + 0.30 * 0.25 (continuity) + 0.5 * 0.20 (source) + 0.90 * 0.10 (temporal) + 0.15 * 0.15 (usefulness)
+      // = 0.255 + 0.075 + 0.10 + 0.09 + 0.0225 = 0.5425
       const scored = ContextScoringEngine.scoreCandidate(baseCandidate);
       
-      expect(scored.combinedScore).toBeCloseTo(0.7330, 4);
+      expect(scored.combinedScore).toBeCloseTo(0.5425, 4);
       expect(scored.scoreBreakdown).toBeDefined();
       expect(scored.scoreBreakdown!.semanticScore).toBe(0.85);
       expect(scored.scoreBreakdown!.temporalWeight).toBe(0.9);
       expect(scored.scoreBreakdown!.continuityWeight).toBe(0.3);
-      expect(scored.scoreBreakdown!.confidenceScore).toBeCloseTo(0.7650, 4);
-      expect(scored.scoreBreakdown!.sourceMultiplier).toBe(1.0);
-      expect(scored.scoreBreakdown!.combinedScoreBeforeMultiplier).toBeCloseTo(0.7330, 4);
-      expect(scored.scoreBreakdown!.finalCombinedScore).toBeCloseTo(0.7330, 4);
+      expect(scored.scoreBreakdown!.confidenceScore).toBeCloseTo(0.85, 4);
+      expect(scored.scoreBreakdown!.sourceMultiplier).toBe(0.5);
+      expect(scored.scoreBreakdown!.combinedScoreBeforeMultiplier).toBeCloseTo(0.5425, 4);
+      expect(scored.scoreBreakdown!.finalCombinedScore).toBeCloseTo(0.5425, 4);
       expect(scored.scoreBreakdown!.continuityReason).toBe("recent_context_match");
     });
   });
 
   describe("Continuity Weighting", () => {
     it("should boost continuityWeight on activeSessionId match", () => {
-      const scored = ContextScoringEngine.scoreCandidate(baseCandidate, {
-        sessionId: "session-123"
-      });
-
-      // Since id doesn't match, let's pass a candidate that matches the session ID
       const sessionCandidate = { ...baseCandidate, id: "v1:user:1:working-memory:session-123:mem-1" };
       const scoredSession = ContextScoringEngine.scoreCandidate(sessionCandidate, {
         sessionId: "session-123"
@@ -76,28 +71,28 @@ describe("Context Scoring Engine Tests (D1.2-B)", () => {
     });
   });
 
-  describe("Source Prioritization Multipliers", () => {
-    it("should apply higher multipliers to profiles and relationship links", () => {
+  describe("Source Prioritization", () => {
+    it("should apply higher trust to profiles and relationship links", () => {
       const profileCandidate: RetrievalCandidate = {
         ...baseCandidate,
         sourceType: "user_profile"
       };
       const scoredProfile = ContextScoringEngine.scoreCandidate(profileCandidate);
 
-      // sourceMultiplier for user_profile is 1.30
-      expect(scoredProfile.scoreBreakdown!.sourceMultiplier).toBe(1.30);
-      expect(scoredProfile.combinedScore).toBeCloseTo(scoredProfile.scoreBreakdown!.combinedScoreBeforeMultiplier * 1.30, 4);
+      // source trust for user_profile is 0.8
+      expect(scoredProfile.scoreBreakdown!.sourceMultiplier).toBe(0.80);
     });
 
-    it("should apply lower multiplier to synthetic_context", () => {
+    it("should apply lower trust to synthetic_context", () => {
       const syntheticCandidate: RetrievalCandidate = {
         ...baseCandidate,
-        sourceType: "synthetic_context"
+        sourceType: "synthetic_context",
+        relevanceScore: 60
       };
       const scoredSynthetic = ContextScoringEngine.scoreCandidate(syntheticCandidate);
 
-      // sourceMultiplier for synthetic_context is 0.95
-      expect(scoredSynthetic.scoreBreakdown!.sourceMultiplier).toBe(0.95);
+      // source trust for high trust synthetic_context is 0.30
+      expect(scoredSynthetic.scoreBreakdown!.sourceMultiplier).toBe(0.30);
     });
   });
 

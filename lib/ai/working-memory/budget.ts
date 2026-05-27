@@ -554,7 +554,10 @@ export class TokenBudgetEngine {
         candidateReductionRate: pruningResult.candidateReductionRate
       },
       diversityMetrics: balancingResult.metrics,
-      assembledContext: assembledContext
+      assembledContext: assembledContext,
+      // D1.3 additions
+      arbitrationTraces: (state.retrievalStaging.metadata as any).arbitrationTraces || null,
+      arbitrationGuardrails: (state.retrievalStaging.metadata as any).arbitrationGuardrails || null
     };
 
     const balancedIds = new Set(balancingResult.balanced.map(c => c.id));

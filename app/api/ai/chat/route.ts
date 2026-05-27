@@ -12,6 +12,7 @@ import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/
 import { traceWorkingMemory, logDevCognitionObservability } from '@/lib/ai/working-memory/observability';
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
+import { RetrievalArbitrationHooks } from '@/lib/ai/working-memory/arbitration';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -51,13 +52,15 @@ export async function POST(request: Request) {
 
     // Stage candidates in Working Memory
     await wm.updateState((state) => {
-      // Re-score memories with active session options (sessionId, currentStage)
-      const scoredMemories = ContextScoringEngine.scoreCandidates(relevantMemories, {
+      // Run Retrieval Arbitration Hooks to select/score best candidates deterministically
+      const arbitrationResult = RetrievalArbitrationHooks.arbitrate(relevantMemories, {
         sessionId: state.sessionId,
         currentStage: state.currentStage
       });
 
-      state.retrievalStaging.rawCandidates = scoredMemories;
+      state.retrievalStaging.rawCandidates = arbitrationResult.candidates;
+      (state.retrievalStaging.metadata as any).arbitrationGuardrails = arbitrationResult.guardrails;
+      (state.retrievalStaging.metadata as any).arbitrationTraces = arbitrationResult.traces;
 
       state.retrievalStaging.temporalCandidates = events.map((e) => ({
         id: e.id,

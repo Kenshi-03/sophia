@@ -19,11 +19,24 @@ function mapToRetrievalCandidate(
   traceReason: string = "Semantic Retrieval"
 ): RetrievalCandidate {
   let sourceType: RetrievalSourceType = "semantic_memory";
-  if (node.memoryType === "episodic") {
+  const nodeSource = node.sourceType as any;
+  
+  if (["system", "roadmap", "explicit_user", "episodic", "synthetic"].includes(nodeSource)) {
+    sourceType = nodeSource;
+  } else if (node.memoryType === "episodic") {
     sourceType = "episodic_memory";
   } else if (node.sourceType === "task") {
     sourceType = "task";
   }
+
+  const tags = node.tags || [];
+  const sprintTag = tags.find(t => t.startsWith("sprint:"))?.split(":")[1];
+  const roadmapPhase = tags.find(t => t.startsWith("phase:"))?.split(":")[1];
+  const continuityCluster = tags.find(t => t.startsWith("cluster:"))?.split(":")[1];
+  const protectedAnchor = tags.includes("protected:true") ? true : undefined;
+  
+  const rawConf = tags.find(t => t.startsWith("confidence:"))?.split(":")[1];
+  const confidence = rawConf ? parseFloat(rawConf) : node.reliability;
 
   return {
     id: node.id,
@@ -35,6 +48,13 @@ function mapToRetrievalCandidate(
     decayedImportance,
     combinedScore,
     traceReason,
+    // D1.3 additions
+    tags,
+    sprintTag,
+    roadmapPhase,
+    continuityCluster,
+    protectedAnchor,
+    confidence
   };
 }
 

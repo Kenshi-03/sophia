@@ -110,12 +110,13 @@ describe("Context Diversity & Temporal Weighting Engine Tests (D1.2-D)", () => {
       // Matched candidate temporal weight is floored to 0.2.
       // Relevance score: 80 normalized = 0.8
       // Continuity weight: taxonomy is "t1" -> no match options passed -> continuity weight = 0.0
-      // Confidence score: relevance normalized * 0.9 = 0.8 * 0.9 = 0.72
+      // Source priority score (semantic_memory) = 0.5
+      // Usefulness score = 0.0
       //
-      // Score before multiplier: 0.8 * 0.4 + 0.2 * 0.2 + 0.0 * 0.2 + 0.72 * 0.2
-      //                         = 0.32 + 0.04 + 0.0 + 0.144 = 0.5040
-      // finalCombinedScore = 0.5040 * 1.0 = 0.5040
-      expect(matched?.combinedScore).toBeCloseTo(0.5040, 4);
+      // Score before multiplier: 0.8 * 0.30 + 0.0 * 0.25 + 0.5 * 0.20 + 0.2 * 0.10 + 0.0 * 0.15
+      //                         = 0.24 + 0.0 + 0.10 + 0.02 + 0.0 = 0.3600
+      // finalCombinedScore = 0.3600
+      expect(matched?.combinedScore).toBeCloseTo(0.3600, 4);
     });
   });
 
