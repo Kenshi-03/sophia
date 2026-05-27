@@ -8,12 +8,12 @@ import { retrieveRelevantMemories } from '@/lib/ai/memory/retrieve-memory';
 import { getUserSchedule } from '@/lib/db/queries/schedule';
 import { decrypt } from '@/lib/security/encryption';
 import prisma from '@/lib/db/prisma';
-import { WorkingMemory, estimateTokensFromChars } from '@/lib/ai/working-memory/store';
+import { WorkingMemory } from '@/lib/ai/working-memory/store';
 import { traceWorkingMemory, logDevCognitionObservability } from '@/lib/ai/working-memory/observability';
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
-import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
 import { RetrievalArbitrationHooks, DetailFidelityEvaluator } from '@/lib/ai/working-memory/arbitration';
 import { ReflectionBuffer } from '@/lib/ai/working-memory/reflection-buffer';
+import { ExecutiveFSM } from '@/lib/ai/orchestration/executive-fsm';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Query is required.' }, { status: 400 });
   }
 
-  // Initialize Working Memory Core
+  // Initialize Working Memory Core (starts in IDLE state)
   const wm = new WorkingMemory(user.id, sessionId || 'chat_session_default', query, {
     executionSource: 'chat_api'
   });
@@ -37,13 +37,19 @@ export async function POST(request: Request) {
   let completionTokens = 0;
 
   try {
-    // 1. Transition to 'retrieval_staging'
-    await wm.updateState((state) => {
-      state.currentStage = 'retrieval_staging';
-    });
+    // 1. Transition to INTENT_ANALYSIS
+    await ExecutiveFSM.transitionTo(wm, 'INTENT_ANALYSIS', 'USER_REQUEST');
 
     // AI agent routing
     const agentType = routeUserQuery(query);
+
+    // 2. Transition to PLANNING
+    await ExecutiveFSM.transitionTo(wm, 'PLANNING', 'INTENT_ANALYZED', {
+      intent: agentType
+    });
+
+    // 3. Transition to RETRIEVAL
+    await ExecutiveFSM.transitionTo(wm, 'RETRIEVAL', 'PLANNING_COMPLETE');
 
     // Retrieve contextual memories
     const relevantMemories = await retrieveRelevantMemories(user.id, query);
@@ -51,7 +57,10 @@ export async function POST(request: Request) {
     // Fetch user schedule/events
     const events = await getUserSchedule(user.id);
 
-    // Stage candidates in Working Memory
+    // 4. Transition to ARBITRATION
+    await ExecutiveFSM.transitionTo(wm, 'ARBITRATION', 'RETRIEVAL_COMPLETE');
+
+    // Stage candidates in Working Memory & run Token Budget pipeline
     await wm.updateState((state) => {
       // Run Retrieval Arbitration Hooks to select/score best candidates deterministically
       const arbitrationResult = RetrievalArbitrationHooks.arbitrate(relevantMemories, {
@@ -85,6 +94,19 @@ export async function POST(request: Request) {
       state.currentTokenCount = budgetResult.state.currentTokenCount;
     });
 
+    // Capture arbitration metrics for the next transition
+    const stateAfterArbitration = wm.getState();
+    const arbitrationSnapshot = {
+      candidateCount: stateAfterArbitration.retrievalStaging.rawCandidates.length,
+      tokenCount: stateAfterArbitration.currentTokenCount,
+      budgetPressure: (stateAfterArbitration.retrievalStaging.metadata as any).budgetingMetrics?.budgetPressureLevel
+    };
+
+    // 5. Transition to GENERATION
+    await ExecutiveFSM.transitionTo(wm, 'GENERATION', 'ARBITRATION_COMPLETE', {
+      arbitrationSnapshot
+    });
+
     // Assemble LLM context payload using the budgeted candidates
     const activeState = wm.getState();
     const context = assembleAgentContext(
@@ -115,12 +137,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Transition to 'reasoning'
-    await wm.updateState((state) => {
-      state.currentStage = 'reasoning';
-      state.reasoningState.scratchpad = 'Staging completed. Requesting response generation from Gemini Gateway...\n';
-    });
-
     // Retrieve user settings for API Key & Model defaults
     const settings = await getSettings(user.id);
     const customApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null;
@@ -143,15 +159,15 @@ export async function POST(request: Request) {
       completionTokens = latestUsage.completionTokens;
     }
 
-    // 3. Transition to 'reflection'
-    await wm.updateState((state) => {
-      state.currentStage = 'reflection';
+    // 6. Transition to REFLECTION
+    await ExecutiveFSM.transitionTo(wm, 'REFLECTION', 'GENERATION_COMPLETE');
 
+    // Execute post-generation Reflection Buffer verification (Read-Only)
+    await wm.updateState((state) => {
       const selectedCandidates = state.retrievalStaging.rawCandidates.filter(
         c => c.arbitrationTrace?.selectionDecision === 'selected'
       );
 
-      // Execute post-generation Reflection Buffer verification (Read-Only)
       const reflectionTelemetry = ReflectionBuffer.verify(
         query,
         response,
@@ -161,13 +177,23 @@ export async function POST(request: Request) {
       state.reflectionBuffer = reflectionTelemetry;
     });
 
-    // 4. Transition to 'completed'
+    // Capture reflection metrics for the next transition
+    const stateAfterReflection = wm.getState();
+    const reflectionSnapshot = {
+      confidenceScore: stateAfterReflection.reflectionBuffer?.confidenceScore,
+      contradictionDetected: stateAfterReflection.reflectionBuffer?.contradictionFlags.possibleContradiction
+    };
+
+    // 7. Transition to PERSISTENCE
+    await ExecutiveFSM.transitionTo(wm, 'PERSISTENCE', 'REFLECTION_COMPLETE', {
+      reflectionSnapshot,
+      persistenceStatus: 'pending'
+    });
+
+    // Evaluate detail preservation and attach metrics to arbitrationGuardrails in metadata
     await wm.updateState((state) => {
-      state.currentStage = 'completed';
-      state.lifecycleStatus = 'completed';
       state.reasoningState.draftResponse = response;
 
-      // Evaluate detail preservation and attach metrics to arbitrationGuardrails in metadata
       const metrics = DetailFidelityEvaluator.evaluate(
         state.retrievalStaging.rawCandidates.filter(
           c => c.arbitrationTrace?.selectionDecision === 'selected'
@@ -192,6 +218,11 @@ export async function POST(request: Request) {
     // Save logs to PostgreSQL
     await wm.saveToDb(latency, promptTokens, completionTokens);
 
+    // 8. Transition to COMPLETED
+    await ExecutiveFSM.transitionTo(wm, 'COMPLETED', 'PERSISTENCE_COMPLETE', {
+      persistenceStatus: 'success'
+    });
+
     // Cleanup ephemeral Redis cache
     await wm.delete('completed');
 
@@ -202,19 +233,35 @@ export async function POST(request: Request) {
       executionId: wm.getState().executionId
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('AI chat endpoint error:', error);
     
-    // Transition to failed
-    await wm.updateState((state) => {
-      state.currentStage = 'failed';
-      state.lifecycleStatus = 'completed';
-      state.cleanupReason = 'failed';
-    });
+    // Determine the type of failure deterministically
+    const errorMsg = error?.message?.toLowerCase() || '';
+    const errorName = error?.name || '';
+    
+    let failureState: 'TIMEOUT' | 'CANCELLED' | 'FAILED' = 'FAILED';
+    let cause: TransitionCause = 'RUNTIME_ERROR';
+
+    if (errorMsg.includes('timeout') || errorName.includes('Timeout')) {
+      failureState = 'TIMEOUT';
+      cause = 'TIMEOUT_TRIGGERED';
+    } else if (errorMsg.includes('cancel') || errorMsg.includes('abort') || errorName.includes('Abort')) {
+      failureState = 'CANCELLED';
+      cause = 'CANCELLATION_TRIGGERED';
+    }
+
+    try {
+      await ExecutiveFSM.transitionTo(wm, failureState, cause, {
+        causeMessage: error?.message || 'Unknown error'
+      });
+    } catch (fsmErr) {
+      console.error('FSM double fault during error transition:', fsmErr);
+    }
 
     const latency = Date.now() - startTime;
     await wm.saveToDb(latency, 0, 0);
-    await wm.delete('failed');
+    await wm.delete(failureState.toLowerCase());
 
     return NextResponse.json({ error: 'Internal system error.' }, { status: 500 });
   }

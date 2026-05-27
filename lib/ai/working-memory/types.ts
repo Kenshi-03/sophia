@@ -1,11 +1,33 @@
-export type WorkingMemoryStage =
-  | 'initialized'
-  | 'retrieval_staging'
-  | 'reasoning'
-  | 'reflection'
-  | 'completed'
-  | 'failed'
-  | 'cleaned';
+export type ExecutiveLifecycleState =
+  | 'IDLE'
+  | 'INTENT_ANALYSIS'
+  | 'PLANNING'
+  | 'RETRIEVAL'
+  | 'ARBITRATION'
+  | 'GENERATION'
+  | 'REFLECTION'
+  | 'PERSISTENCE'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'DEGRADED'
+  | 'CANCELLED'
+  | 'TIMEOUT';
+
+export type WorkingMemoryStage = ExecutiveLifecycleState;
+
+export type TransitionCause =
+  | 'USER_REQUEST'
+  | 'INTENT_ANALYZED'
+  | 'PLANNING_COMPLETE'
+  | 'RETRIEVAL_COMPLETE'
+  | 'ARBITRATION_COMPLETE'
+  | 'GENERATION_COMPLETE'
+  | 'REFLECTION_COMPLETE'
+  | 'PERSISTENCE_COMPLETE'
+  | 'TIMEOUT_TRIGGERED'
+  | 'CANCELLATION_TRIGGERED'
+  | 'RUNTIME_ERROR'
+  | 'DEGRADED_FALLBACK';
 
 export type LifecycleStatus = 'active' | 'stale' | 'completed' | 'cleaned';
 
@@ -30,14 +52,20 @@ export type ExecutionPriority = 'low' | 'normal' | 'high' | 'critical';
 export type ClassificationTier = 'critical' | 'persistent' | 'contextual' | 'transient';
 
 // Transition contract for FSM
-export const ALLOWED_TRANSITIONS: Record<WorkingMemoryStage, WorkingMemoryStage[]> = {
-  initialized: ['retrieval_staging', 'failed'],
-  retrieval_staging: ['reasoning', 'failed'],
-  reasoning: ['reflection', 'completed', 'failed'],
-  reflection: ['reasoning', 'completed', 'failed'],
-  completed: ['cleaned'],
-  failed: ['cleaned'],
-  cleaned: [] // Terminal state
+export const ALLOWED_TRANSITIONS: Record<ExecutiveLifecycleState, ExecutiveLifecycleState[]> = {
+  IDLE: ['INTENT_ANALYSIS', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  INTENT_ANALYSIS: ['PLANNING', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  PLANNING: ['RETRIEVAL', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  RETRIEVAL: ['ARBITRATION', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  ARBITRATION: ['GENERATION', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  GENERATION: ['REFLECTION', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  REFLECTION: ['PERSISTENCE', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  PERSISTENCE: ['COMPLETED', 'FAILED', 'DEGRADED', 'CANCELLED', 'TIMEOUT'],
+  COMPLETED: [], // Terminal state
+  FAILED: [], // Terminal state
+  DEGRADED: ['INTENT_ANALYSIS', 'PLANNING', 'RETRIEVAL', 'ARBITRATION', 'GENERATION', 'REFLECTION', 'PERSISTENCE', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT'],
+  CANCELLED: [], // Terminal state
+  TIMEOUT: [] // Terminal state
 };
 
 // Token safety & limit configurations
@@ -288,5 +316,42 @@ export interface WorkingMemoryState {
   reasoningState: TemporaryReasoningState;
   reflectionPrep: ReflectionPreparation;
   reflectionBuffer?: ReflectionBufferTelemetry;
+  executiveFSM?: FSMTelemetry;
+  executionContext?: ExecutionContext;
+}
+
+export interface FSMTelemetry {
+  currentState: ExecutiveLifecycleState;
+  previousState: ExecutiveLifecycleState | null;
+  transitionHistory: {
+    from: ExecutiveLifecycleState | null;
+    to: ExecutiveLifecycleState;
+    timestamp: string;
+    cause: TransitionCause;
+    durationMs?: number;
+  }[];
+  transitionCount: number;
+  transitionDurations: Record<string, number>;
+  runtimeLatency: number;
+  failureState: string | null;
+  orchestrationStatus: 'idle' | 'running' | 'completed' | 'failed' | 'degraded';
+  runtimeVersion: string;
+}
+
+export interface ExecutionContext {
+  currentState: ExecutiveLifecycleState;
+  previousState: ExecutiveLifecycleState | null;
+  activeIntent: string | null;
+  runtimeStartTime: number;
+  transitionHistory: {
+    from: ExecutiveLifecycleState | null;
+    to: ExecutiveLifecycleState;
+    timestamp: string;
+    cause: TransitionCause;
+  }[];
+  activeRequestId: string;
+  arbitrationSnapshot: any | null;
+  reflectionSnapshot: any | null;
+  persistenceStatus: 'pending' | 'success' | 'failed' | 'none';
 }
 

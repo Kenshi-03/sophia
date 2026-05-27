@@ -10,6 +10,7 @@ import {
   ALLOWED_TRANSITIONS,
   WORKING_MEMORY_LIMITS
 } from './types';
+import { TransitionRegistry, StateGuards } from '../orchestration/executive-fsm';
 
 // Lua script for atomic versioned write
 const LUA_VERSIONED_WRITE = `
@@ -69,7 +70,7 @@ export class WorkingMemory {
       executionId: execId,
       userId,
       sessionId,
-      currentStage: 'initialized',
+      currentStage: 'IDLE',
       currentUserInput: userInput,
       tokenBudget: budget,
       currentTokenCount: Math.ceil(userInput.length / 4), // local character-based approximation
@@ -220,15 +221,17 @@ export class WorkingMemory {
 
       // Enforce FSM state transition rules
       if (stateCopy.currentStage !== originalStage) {
-        const allowed = ALLOWED_TRANSITIONS[originalStage] || [];
-        if (!allowed.includes(stateCopy.currentStage)) {
-          logger.error('FSM contract violation: invalid stage transition attempted', {
+        try {
+          TransitionRegistry.validateTransition(originalStage, stateCopy.currentStage);
+          StateGuards.verifyStateTransition(stateCopy, originalStage, stateCopy.currentStage);
+        } catch (err) {
+          logger.error('FSM contract violation during state mutation', {
             executionId: this.state.executionId,
             from: originalStage,
             to: stateCopy.currentStage,
-            allowed
+            error: err
           });
-          throw new Error(`FSM contract violation: stage cannot transition from ${originalStage} to ${stateCopy.currentStage}`);
+          throw err;
         }
       }
 
@@ -285,7 +288,15 @@ export class WorkingMemory {
    */
   public async delete(cleanupReason = 'completed'): Promise<void> {
     try {
-      this.state.currentStage = 'cleaned';
+      if (cleanupReason === 'failed') {
+        this.state.currentStage = 'FAILED';
+      } else if (cleanupReason === 'timeout') {
+        this.state.currentStage = 'TIMEOUT';
+      } else if (cleanupReason === 'cancelled') {
+        this.state.currentStage = 'CANCELLED';
+      } else {
+        this.state.currentStage = 'COMPLETED';
+      }
       this.state.lifecycleStatus = 'cleaned';
       this.state.cleanupReason = cleanupReason;
 
@@ -337,7 +348,9 @@ export class WorkingMemory {
         budgetingMetrics,
         arbitrationTraces,
         arbitrationGuardrails,
-        reflectionBuffer: this.state.reflectionBuffer || null
+        reflectionBuffer: this.state.reflectionBuffer || null,
+        executiveFSM: this.state.executiveFSM || null,
+        executionContext: this.state.executionContext || null
       };
 
       const finalConfidenceScore = this.state.reflectionBuffer
