@@ -13,6 +13,7 @@ import { traceWorkingMemory, logDevCognitionObservability } from '@/lib/ai/worki
 import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { ContextScoringEngine } from '@/lib/ai/working-memory/scoring';
 import { RetrievalArbitrationHooks, DetailFidelityEvaluator } from '@/lib/ai/working-memory/arbitration';
+import { ReflectionBuffer } from '@/lib/ai/working-memory/reflection-buffer';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -142,7 +143,25 @@ export async function POST(request: Request) {
       completionTokens = latestUsage.completionTokens;
     }
 
-    // 3. Transition to 'completed'
+    // 3. Transition to 'reflection'
+    await wm.updateState((state) => {
+      state.currentStage = 'reflection';
+
+      const selectedCandidates = state.retrievalStaging.rawCandidates.filter(
+        c => c.arbitrationTrace?.selectionDecision === 'selected'
+      );
+
+      // Execute post-generation Reflection Buffer verification (Read-Only)
+      const reflectionTelemetry = ReflectionBuffer.verify(
+        query,
+        response,
+        selectedCandidates
+      );
+
+      state.reflectionBuffer = reflectionTelemetry;
+    });
+
+    // 4. Transition to 'completed'
     await wm.updateState((state) => {
       state.currentStage = 'completed';
       state.lifecycleStatus = 'completed';
@@ -150,7 +169,9 @@ export async function POST(request: Request) {
 
       // Evaluate detail preservation and attach metrics to arbitrationGuardrails in metadata
       const metrics = DetailFidelityEvaluator.evaluate(
-        state.retrievalStaging.rawCandidates,
+        state.retrievalStaging.rawCandidates.filter(
+          c => c.arbitrationTrace?.selectionDecision === 'selected'
+        ),
         response
       );
       if (state.retrievalStaging.metadata.arbitrationGuardrails) {

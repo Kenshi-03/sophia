@@ -26,6 +26,7 @@
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { RetrievalArbitrationHooks } from "../lib/ai/working-memory/arbitration";
+import { ReflectionBuffer } from "../lib/ai/working-memory/reflection-buffer";
 import { RetrievalCandidate } from "../lib/ai/working-memory/types";
 
 const prisma = new PrismaClient();
@@ -1940,6 +1941,60 @@ async function main() {
     console.log("      - Replay determinism validation: ✓ PASS");
   } else {
     console.log("      - Replay determinism validation: ❌ FAIL (Replay outputs mutated across iterations)");
+    failureCount++;
+  }
+
+  // ─── SECTION 8: REFLECTION BUFFER VALIDATION (D1.4) ───
+  console.log("\n  [Section 8: Reflection Buffer Validation (D1.4)]");
+
+  // 1. Contradiction scenario validation
+  const conflictingResponse = "SOPHIA duplicate suppression uses an overlap threshold of 0.70, but we also configured it to be 0.75 for testing.";
+  const contradictionEval = ReflectionBuffer.verify(
+    "Apa keputusan duplicate suppression di sprint D1.3?",
+    conflictingResponse,
+    selectedQ5
+  );
+  console.log(`    - Contradiction detected: ${contradictionEval.contradictionFlags.possibleContradiction ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Contradiction Score: ${contradictionEval.contradictionScore}`);
+  console.log(`      - Severity: ${contradictionEval.contradictionFlags.contradictionSeverity}`);
+  if (contradictionEval.contradictionFlags.possibleContradiction && contradictionEval.contradictionScore >= 0.5) {
+    console.log("      - Contradiction validation: ✓ PASS");
+  } else {
+    console.log("      - Contradiction validation: ❌ FAIL");
+    failureCount++;
+  }
+
+  // 2. Ambiguity scenario validation
+  const ambiguousQuery = "roadmap database indexing";
+  const ambiguityEval = ReflectionBuffer.verify(
+    ambiguousQuery,
+    "Standard indexing response",
+    selectedQ1
+  );
+  console.log(`    - Ambiguity detected: ${ambiguityEval.ambiguityFlags.ambiguityDetected ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Ambiguity Score: ${ambiguityEval.ambiguityScore}`);
+  console.log(`      - Ambiguity Types: ${ambiguityEval.ambiguityFlags.ambiguityType.join(', ')}`);
+  if (ambiguityEval.ambiguityFlags.ambiguityDetected && ambiguityEval.ambiguityScore >= 0.4) {
+    console.log("      - Ambiguity validation: ✓ PASS");
+  } else {
+    console.log("      - Ambiguity validation: ❌ FAIL");
+    failureCount++;
+  }
+
+  // 3. Grounding validation (detail loss / excessive compression)
+  const genericResponse = "SOPHIA duplicate suppression was applied to remove redundant candidates.";
+  const groundingEval = ReflectionBuffer.verify(
+    "Apa keputusan duplicate suppression di sprint D1.3?",
+    genericResponse,
+    selectedQ5
+  );
+  console.log(`    - Grounding flags - detail loss: ${groundingEval.groundingFlags.retrievalDetailLoss ? "✓ YES" : "❌ NO"}`);
+  console.log(`      - Grounding Score: ${groundingEval.groundingScore}`);
+  console.log(`      - Detail Compression Ratio: ${groundingEval.detailCompressionRatio}`);
+  if (groundingEval.groundingFlags.retrievalDetailLoss && groundingEval.detailCompressionRatio > 0.40) {
+    console.log("      - Grounding detail loss validation: ✓ PASS");
+  } else {
+    console.log("      - Grounding detail loss validation: ❌ FAIL");
     failureCount++;
   }
 

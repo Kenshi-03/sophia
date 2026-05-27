@@ -336,8 +336,17 @@ export class WorkingMemory {
         totalRetrievedCount: this.state.retrievalStaging.metadata.totalRetrievedCount,
         budgetingMetrics,
         arbitrationTraces,
-        arbitrationGuardrails
+        arbitrationGuardrails,
+        reflectionBuffer: this.state.reflectionBuffer || null
       };
+
+      const finalConfidenceScore = this.state.reflectionBuffer
+        ? this.state.reflectionBuffer.confidenceScore
+        : this.state.reflectionPrep.confidenceScore;
+
+      const finalReflectionStatus = this.state.reflectionBuffer
+        ? (this.state.reflectionBuffer.contradictionFlags.possibleContradiction ? 'failed' : 'success')
+        : (this.state.reflectionPrep.feedbackBuffer.length > 0 ? 'corrected' : 'none');
 
       await prisma.workingMemoryLog.create({
         data: {
@@ -355,8 +364,8 @@ export class WorkingMemory {
           reflectionRetryCount: this.state.reflectionPrep.retryTracker.reflection_retry,
           gatewayRetryCount: this.state.reflectionPrep.retryTracker.gateway_retry,
           orchestrationRetryCount: this.state.reflectionPrep.retryTracker.orchestration_retry,
-          confidenceScore: this.state.reflectionPrep.confidenceScore,
-          reflectionStatus: this.state.reflectionPrep.feedbackBuffer.length > 0 ? 'corrected' : 'none',
+          confidenceScore: finalConfidenceScore,
+          reflectionStatus: finalReflectionStatus,
           retrievalTrace: retrievalTrace as any,
           executionSource: this.state.executionSource,
           cleanupReason: this.state.cleanupReason !== 'none' ? this.state.cleanupReason : 'completed',

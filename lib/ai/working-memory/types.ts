@@ -232,6 +232,41 @@ export interface ReflectionPreparation {
   feedbackBuffer: string[]; // Self-reflection output or critiques
 }
 
+export interface ContradictionFlags {
+  possibleContradiction: boolean;
+  contradictionSeverity: 'none' | 'low' | 'medium' | 'high';
+}
+
+export interface AmbiguityFlags {
+  ambiguityDetected: boolean;
+  ambiguityType: string[];
+}
+
+export interface GroundingFlags {
+  groundingWeak: boolean;
+  genericFallbackDominance: boolean;
+  retrievalDetailLoss: boolean;
+  lowConfidence: boolean;
+  unstableGrounding: boolean;
+  excessiveCompression: boolean;
+}
+
+export interface ReflectionBufferTelemetry {
+  contradictionScore: number;
+  ambiguityScore: number;
+  confidenceScore: number;
+  groundingScore: number;
+
+  contradictionFlags: ContradictionFlags;
+  ambiguityFlags: AmbiguityFlags;
+  groundingFlags: GroundingFlags;
+
+  retrievalInfluenceRatio: number;
+  detailCompressionRatio: number;
+
+  diagnosticsSummary: string;
+}
+
 export interface WorkingMemoryState {
   schemaVersion: number;
   version: number; // Incremented for atomic optimistic locking
@@ -252,4 +287,6 @@ export interface WorkingMemoryState {
   retrievalStaging: RetrievalStagingArea;
   reasoningState: TemporaryReasoningState;
   reflectionPrep: ReflectionPreparation;
+  reflectionBuffer?: ReflectionBufferTelemetry;
 }
+
