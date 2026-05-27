@@ -318,6 +318,7 @@ export interface WorkingMemoryState {
   reflectionBuffer?: ReflectionBufferTelemetry;
   executiveFSM?: FSMTelemetry;
   executionContext?: ExecutionContext;
+  asyncTelemetry?: AsyncRuntimeTelemetry;
 }
 
 export interface FSMTelemetry {
@@ -353,5 +354,21 @@ export interface ExecutionContext {
   arbitrationSnapshot: any | null;
   reflectionSnapshot: any | null;
   persistenceStatus: 'pending' | 'success' | 'failed' | 'none';
+}
+
+export type AsyncTaskState = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'TIMEOUT';
+
+export interface AsyncRuntimeTelemetry {
+  activeTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  cancelledTasks: number;
+  timeoutTasks: number;
+  queueDepth: number;
+  concurrencyUsage: number;
+  taskDurations: Record<string, number>;
+  cancellationEvents: { taskId?: string; reason: string; timestamp: string }[];
+  timeoutEvents: { taskId?: string; durationMs: number; timestamp: string }[];
+  schedulerLatency: number;
 }
 

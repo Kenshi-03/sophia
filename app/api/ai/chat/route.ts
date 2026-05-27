@@ -14,6 +14,12 @@ import { TokenBudgetEngine } from '@/lib/ai/working-memory/budget';
 import { RetrievalArbitrationHooks, DetailFidelityEvaluator } from '@/lib/ai/working-memory/arbitration';
 import { ReflectionBuffer } from '@/lib/ai/working-memory/reflection-buffer';
 import { ExecutiveFSM } from '@/lib/ai/orchestration/executive-fsm';
+import { 
+  AsyncOrchestrator, 
+  AsyncTaskRunner, 
+  TimeoutManager, 
+  CancellationManager 
+} from '@/lib/ai/orchestration/async-runtime';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -32,9 +38,18 @@ export async function POST(request: Request) {
   });
   await wm.save();
 
+  const executionId = wm.getState().executionId;
   const startTime = Date.now();
   let promptTokens = 0;
   let completionTokens = 0;
+
+  // Initialize request-scoped async orchestrator
+  const orchestrator = new AsyncOrchestrator(executionId);
+
+  // Set Request-level timeout (e.g. 30 seconds) to cancel scope automatically
+  TimeoutManager.registerTimeout(executionId, 30000, () => {
+    CancellationManager.cancelScope(executionId, 'Request-level execution timeout triggered after 30000ms');
+  });
 
   try {
     // 1. Transition to INTENT_ANALYSIS
@@ -51,11 +66,42 @@ export async function POST(request: Request) {
     // 3. Transition to RETRIEVAL
     await ExecutiveFSM.transitionTo(wm, 'RETRIEVAL', 'PLANNING_COMPLETE');
 
-    // Retrieve contextual memories
-    const relevantMemories = await retrieveRelevantMemories(user.id, query);
+    // Dispatch retrieval tasks concurrently under the orchestrator
+    const taskA = new AsyncTaskRunner({
+      taskId: `retrieve_memories_${executionId}`,
+      taskType: 'retrieval_memory',
+      parentRequestId: executionId,
+      lifecycleState: 'RETRIEVAL',
+      isCritical: true, // critical
+      execute: async (signal) => {
+        if (signal.aborted) throw new Error('Task aborted');
+        return retrieveRelevantMemories(user.id, query);
+      }
+    });
 
-    // Fetch user schedule/events
-    const events = await getUserSchedule(user.id);
+    const taskB = new AsyncTaskRunner({
+      taskId: `retrieve_schedule_${executionId}`,
+      taskType: 'retrieval_schedule',
+      parentRequestId: executionId,
+      lifecycleState: 'RETRIEVAL',
+      isCritical: false, // non-critical (degrade gracefully on failure)
+      execute: async (signal) => {
+        if (signal.aborted) throw new Error('Task aborted');
+        return getUserSchedule(user.id);
+      }
+    });
+
+    const [memoriesResult, eventsResult] = await orchestrator.executeAllConcurrently([taskA, taskB]);
+
+    const relevantMemories = memoriesResult || [];
+    const events = eventsResult || [];
+
+    // Check if taskB failed to degrade FSM state gracefully
+    if (taskB.executionState === 'FAILED') {
+      await ExecutiveFSM.transitionTo(wm, 'DEGRADED', 'DEGRADED_FALLBACK', {
+        causeMessage: 'Non-critical schedule retrieval task failed.'
+      });
+    }
 
     // 4. Transition to ARBITRATION
     await ExecutiveFSM.transitionTo(wm, 'ARBITRATION', 'RETRIEVAL_COMPLETE');
@@ -215,7 +261,10 @@ export async function POST(request: Request) {
     // Trace diagnostics
     traceWorkingMemory(wm);
 
-    // Save logs to PostgreSQL
+    // Compile telemetry and clean up timers/controllers
+    await orchestrator.compileTelemetryAndCleanup(wm);
+
+    // Save logs to PostgreSQL (contains asyncTelemetry compiled above)
     await wm.saveToDb(latency, promptTokens, completionTokens);
 
     // 8. Transition to COMPLETED
@@ -230,7 +279,7 @@ export async function POST(request: Request) {
       query,
       agentType,
       response,
-      executionId: wm.getState().executionId
+      executionId
     });
 
   } catch (error: any) {
@@ -260,6 +309,10 @@ export async function POST(request: Request) {
     }
 
     const latency = Date.now() - startTime;
+
+    // Compile telemetry and clean up timers/controllers
+    await orchestrator.compileTelemetryAndCleanup(wm);
+
     await wm.saveToDb(latency, 0, 0);
     await wm.delete(failureState.toLowerCase());
 

@@ -350,7 +350,8 @@ export class WorkingMemory {
         arbitrationGuardrails,
         reflectionBuffer: this.state.reflectionBuffer || null,
         executiveFSM: this.state.executiveFSM || null,
-        executionContext: this.state.executionContext || null
+        executionContext: this.state.executionContext || null,
+        asyncTelemetry: this.state.asyncTelemetry || null
       };
 
       const finalConfidenceScore = this.state.reflectionBuffer
