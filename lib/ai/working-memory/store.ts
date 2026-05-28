@@ -351,7 +351,8 @@ export class WorkingMemory {
         reflectionBuffer: this.state.reflectionBuffer || null,
         executiveFSM: this.state.executiveFSM || null,
         executionContext: this.state.executionContext || null,
-        asyncTelemetry: this.state.asyncTelemetry || null
+        asyncTelemetry: this.state.asyncTelemetry || null,
+        toolTelemetry: this.state.toolTelemetry || null
       };
 
       const finalConfidenceScore = this.state.reflectionBuffer

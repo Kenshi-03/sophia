@@ -21,6 +21,7 @@ import {
   TimeoutManager, 
   CancellationManager 
 } from '@/lib/ai/orchestration/async-runtime';
+import { ToolExecutionManager } from '@/lib/ai/orchestration/tool-orchestrator';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
     // AI agent routing
     const agentType = routeUserQuery(query);
 
+    // Initialize ToolExecutionManager with the active intent
+    const toolManager = new ToolExecutionManager(wm, agentType);
+
     // 2. Transition to PLANNING
     await ExecutiveFSM.transitionTo(wm, 'PLANNING', 'INTENT_ANALYZED', {
       intent: agentType
@@ -67,38 +71,19 @@ export async function POST(request: Request) {
     // 3. Transition to RETRIEVAL
     await ExecutiveFSM.transitionTo(wm, 'RETRIEVAL', 'PLANNING_COMPLETE');
 
-    // Dispatch retrieval tasks concurrently under the orchestrator
-    const taskA = new AsyncTaskRunner({
-      taskId: `retrieve_memories_${executionId}`,
-      taskType: 'retrieval_memory',
-      parentRequestId: executionId,
-      lifecycleState: 'RETRIEVAL',
-      isCritical: true, // critical
-      execute: async (signal) => {
-        if (signal.aborted) throw new Error('Task aborted');
-        return retrieveRelevantMemories(user.id, query);
-      }
-    });
-
-    const taskB = new AsyncTaskRunner({
-      taskId: `retrieve_schedule_${executionId}`,
-      taskType: 'retrieval_schedule',
-      parentRequestId: executionId,
-      lifecycleState: 'RETRIEVAL',
-      isCritical: false, // non-critical (degrade gracefully on failure)
-      execute: async (signal) => {
-        if (signal.aborted) throw new Error('Task aborted');
-        return getUserSchedule(user.id);
-      }
-    });
-
-    const [memoriesResult, eventsResult] = await orchestrator.executeAllConcurrently<any>([taskA, taskB]);
+    // Execute retrieval tools concurrently under ToolExecutionManager (which uses AsyncScheduler internally)
+    const [memoriesResult, eventsResult] = await Promise.all([
+      toolManager.execute('memory_search', { userId: user.id, query }),
+      toolManager.execute('schedule_lookup', { userId: user.id })
+    ]);
 
     const relevantMemories = memoriesResult || [];
     const events = eventsResult || [];
 
-    // Check if taskB failed to degrade FSM state gracefully
-    if (taskB.executionState === 'FAILED') {
+    // Check if schedule lookup failed/degraded to degrade FSM state gracefully
+    const toolTelemetry = wm.getState().toolTelemetry || [];
+    const scheduleLookupTelemetry = toolTelemetry.find(t => t.toolId === 'schedule_lookup');
+    if (scheduleLookupTelemetry && (scheduleLookupTelemetry.lifecycleState === 'DEGRADED' || scheduleLookupTelemetry.lifecycleState === 'FAILED')) {
       await ExecutiveFSM.transitionTo(wm, 'DEGRADED', 'DEGRADED_FALLBACK', {
         causeMessage: 'Non-critical schedule retrieval task failed.'
       });
@@ -107,18 +92,20 @@ export async function POST(request: Request) {
     // 4. Transition to ARBITRATION
     await ExecutiveFSM.transitionTo(wm, 'ARBITRATION', 'RETRIEVAL_COMPLETE');
 
-    // Stage candidates in Working Memory & run Token Budget pipeline
-    await wm.updateState((state) => {
-      // Run Retrieval Arbitration Hooks to select/score best candidates deterministically
-      const arbitrationResult = RetrievalArbitrationHooks.arbitrate(relevantMemories, {
-        sessionId: state.sessionId,
-        currentStage: state.currentStage,
+    // Stage candidates in Working Memory & run Token Budget pipeline via arbitration_engine tool
+    const arbitrationResult = await toolManager.execute('arbitration_engine', {
+      relevantMemories,
+      options: {
+        sessionId: wm.getState().sessionId,
+        currentStage: wm.getState().currentStage,
         query: query,
         activeRoadmapPhase: process.env.ACTIVE_ROADMAP_PHASE || "phase-d",
         activeSprint: process.env.ACTIVE_SPRINT || "sprint-1",
         activeContinuityCluster: process.env.ACTIVE_CONTINUITY_CLUSTER || "d13-validation"
-      });
+      }
+    });
 
+    await wm.updateState((state) => {
       state.retrievalStaging.rawCandidates = arbitrationResult.candidates;
       (state.retrievalStaging.metadata as any).arbitrationGuardrails = arbitrationResult.guardrails;
       (state.retrievalStaging.metadata as any).arbitrationTraces = arbitrationResult.traces;
@@ -188,11 +175,15 @@ export async function POST(request: Request) {
     const settings = await getSettings(user.id);
     const customApiKey = settings.aiApiKey ? decrypt(settings.aiApiKey) : null;
 
-    // Generate output utilizing MAIA gateway
-    const response = await generateAiResponse(query, context, { 
-      model: model || settings.aiModel, 
-      aiMode: aiMode || (settings.aiMode as any), 
-      customApiKey 
+    // Generate output utilizing response_generation tool
+    const response = await toolManager.execute('response_generation', {
+      query,
+      context,
+      options: {
+        model: model || settings.aiModel,
+        aiMode: aiMode || (settings.aiMode as any),
+        customApiKey
+      }
     });
 
     // Fetch exact token count from the tracked AI usage table
@@ -209,18 +200,18 @@ export async function POST(request: Request) {
     // 6. Transition to REFLECTION
     await ExecutiveFSM.transitionTo(wm, 'REFLECTION', 'GENERATION_COMPLETE');
 
-    // Execute post-generation Reflection Buffer verification (Read-Only)
+    // Execute post-generation Reflection Buffer verification via reflection_verify tool
+    const selectedCandidates = wm.getState().retrievalStaging.rawCandidates.filter(
+      c => c.arbitrationTrace?.selectionDecision === 'selected'
+    );
+
+    const reflectionTelemetry = await toolManager.execute('reflection_verify', {
+      query,
+      response,
+      candidates: selectedCandidates
+    });
+
     await wm.updateState((state) => {
-      const selectedCandidates = state.retrievalStaging.rawCandidates.filter(
-        c => c.arbitrationTrace?.selectionDecision === 'selected'
-      );
-
-      const reflectionTelemetry = ReflectionBuffer.verify(
-        query,
-        response,
-        selectedCandidates
-      );
-
       state.reflectionBuffer = reflectionTelemetry;
     });
 
@@ -265,8 +256,12 @@ export async function POST(request: Request) {
     // Compile telemetry and clean up timers/controllers
     await orchestrator.compileTelemetryAndCleanup(wm);
 
-    // Save logs to PostgreSQL (contains asyncTelemetry compiled above)
-    await wm.saveToDb(latency, promptTokens, completionTokens);
+    // Save logs to PostgreSQL via postgres_persist tool
+    await toolManager.execute('postgres_persist', {
+      latencyMs: latency,
+      promptTokens,
+      completionTokens
+    }, { wm });
 
     // 8. Transition to COMPLETED
     await ExecutiveFSM.transitionTo(wm, 'COMPLETED', 'PERSISTENCE_COMPLETE', {

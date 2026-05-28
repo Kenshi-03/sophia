@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export type ExecutiveLifecycleState =
   | 'IDLE'
   | 'INTENT_ANALYSIS'
@@ -319,6 +321,7 @@ export interface WorkingMemoryState {
   executiveFSM?: FSMTelemetry;
   executionContext?: ExecutionContext;
   asyncTelemetry?: AsyncRuntimeTelemetry;
+  toolTelemetry?: ToolExecutionTelemetry[];
 }
 
 export interface FSMTelemetry {
@@ -370,5 +373,67 @@ export interface AsyncRuntimeTelemetry {
   cancellationEvents: { taskId?: string; reason: string; timestamp: string }[];
   timeoutEvents: { taskId?: string; durationMs: number; timestamp: string }[];
   schedulerLatency: number;
+}
+
+export type ToolLifecycleState =
+  | 'REGISTERED'
+  | 'ROUTED'
+  | 'VALIDATED'
+  | 'EXECUTING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'TIMEOUT'
+  | 'DEGRADED';
+
+export type ToolCriticality = 'CRITICAL' | 'IMPORTANT' | 'OPTIONAL';
+
+export interface ToolExecutionContract<I extends z.ZodTypeAny = z.ZodTypeAny, O extends z.ZodTypeAny = z.ZodTypeAny> {
+  toolId: string;
+  toolName: string;
+  toolVersion: string;
+  criticality: ToolCriticality;
+  inputSchema: I;
+  outputSchema: O;
+  timeoutMs: number;
+  maxRetries: number;
+  permissionScopes: {
+    allowedStages: ExecutiveLifecycleState[];
+    allowedIntents?: string[];
+  };
+  resourceLimits: {
+    maxPayloadBytes?: number;
+    maxTokens?: number;
+  };
+}
+
+export interface ToolExecutionTelemetry {
+  toolId: string;
+  toolName: string;
+  toolVersion: string;
+  requestId: string;
+  executionOwner: string;
+  lifecycleState: ToolLifecycleState;
+  input: any;
+  output?: any;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  latencyMs?: number;
+  inputHash: string;
+  outputHash?: string;
+  retryCount: number;
+  budgetUsage: {
+    latencyMs: number;
+    tokens?: number;
+    payloadSize?: number;
+  };
+  routingReasonCode:
+    | 'FSM_STAGE_MATCH'
+    | 'INTENT_SCOPE_MATCH'
+    | 'PERMISSION_VALIDATED'
+    | 'DEGRADED_FALLBACK'
+    | 'ROUTE_REJECTED';
+  routingReasonDetail?: string;
 }
 
