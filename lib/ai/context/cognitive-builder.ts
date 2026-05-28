@@ -127,6 +127,8 @@ export async function buildCognitiveContext(
       courseSession: e.courseSession ? {
         sessionType: e.courseSession.sessionType,
         sessionMode: e.courseSession.sessionMode,
+        progressState: e.courseSession.progressState,
+        progressPercentage: e.courseSession.progressPercentage,
       } : null,
     }
   })
@@ -145,10 +147,27 @@ export async function buildCognitiveContext(
     // Academic Course Sessions (except HOLIDAY) are focus activities
     const isAcademicFocus = e.courseSession && e.courseSession.sessionType !== "HOLIDAY";
     
-    if (isAcademicFocus || type === "deep-work" || type === "academic" || type === "exam") {
-      focusMinutes += e.durationMinutes
+    let isFocusActive = true;
+    let resolvedDuration = e.durationMinutes;
+
+    if (e.courseSession) {
+      const state = e.courseSession.progressState;
+      const pct = e.courseSession.progressPercentage;
+
+      if (state === "POSTPONED" || state === "CANCELLED" || state === "SKIPPED") {
+        isFocusActive = false;
+        resolvedDuration = 0;
+      } else if (state === "PARTIALLY_COMPLETED" || state === "IN_PROGRESS") {
+        resolvedDuration = Math.round(e.durationMinutes * (pct / 100));
+      }
+    }
+
+    if (isAcademicFocus && isFocusActive) {
+      focusMinutes += resolvedDuration;
+    } else if (type === "deep-work" || type === "academic" || type === "exam") {
+      focusMinutes += e.durationMinutes;
     } else if (titleLower.includes("focus") || titleLower.includes("deep") || titleLower.includes("belajar") || titleLower.includes("kuliah")) {
-      focusMinutes += e.durationMinutes
+      focusMinutes += e.durationMinutes;
     }
     
     // Recovery activities: sleep, workout, ibadah, leisure/social
@@ -160,13 +179,15 @@ export async function buildCognitiveContext(
 
     // Exam Counting (including CourseSession MID_EXAM and FINAL_EXAM)
     const isAcademicExam = e.courseSession && (e.courseSession.sessionType === "MID_EXAM" || e.courseSession.sessionType === "FINAL_EXAM");
-    if (isAcademicExam || type === "exam" || titleLower.includes("ujian") || titleLower.includes("evaluasi") || titleLower.includes("test") || titleLower.includes("uts") || titleLower.includes("uas")) {
+    const isExamActive = isAcademicExam && e.courseSession && e.courseSession.progressState !== "POSTPONED" && e.courseSession.progressState !== "CANCELLED" && e.courseSession.progressState !== "SKIPPED";
+    if (isExamActive || type === "exam" || titleLower.includes("ujian") || titleLower.includes("evaluasi") || titleLower.includes("test") || titleLower.includes("uts") || titleLower.includes("uas")) {
       examCount++
     }
 
     // Deadline/Quiz/Presentation Counting
     const isAcademicDeadline = e.courseSession && (e.courseSession.sessionType === "QUIZ" || e.courseSession.sessionType === "PRESENTATION");
-    if (isAcademicDeadline || type === "deadline" || titleLower.includes("deadline") || titleLower.includes("tugas")) {
+    const isDeadlineActive = isAcademicDeadline && e.courseSession && e.courseSession.progressState !== "POSTPONED" && e.courseSession.progressState !== "CANCELLED" && e.courseSession.progressState !== "SKIPPED";
+    if (isDeadlineActive || type === "deadline" || titleLower.includes("deadline") || titleLower.includes("tugas")) {
       deadlineCount++
     }
   })
@@ -256,8 +277,23 @@ export async function buildCognitiveContext(
     const type = resolvedType.toLowerCase().replace("_", "-")
     const duration = Math.round((e.endTime.getTime() - e.startTime.getTime()) / 60000)
 
-    if (type === "deep-work" || type === "academic" || type === "exam") {
-      consecutiveFocusMinutes += duration
+    const isCourseSessionExecutionActive = !e.courseSession || (
+      e.courseSession.progressState !== "POSTPONED" && 
+      e.courseSession.progressState !== "CANCELLED" && 
+      e.courseSession.progressState !== "SKIPPED"
+    );
+
+    if (isCourseSessionExecutionActive && (type === "deep-work" || type === "academic" || type === "exam")) {
+      let resolvedDuration = duration;
+      if (e.courseSession) {
+        const state = e.courseSession.progressState;
+        const pct = e.courseSession.progressPercentage;
+        if (state === "PARTIALLY_COMPLETED" || state === "IN_PROGRESS") {
+          resolvedDuration = Math.round(duration * (pct / 100));
+        }
+      }
+
+      consecutiveFocusMinutes += resolvedDuration
       if (consecutiveFocusMinutes > maxConsecutiveFocus) {
         maxConsecutiveFocus = consecutiveFocusMinutes
       }

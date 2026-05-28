@@ -416,6 +416,16 @@ enum CourseSessionMode {
   HYBRID
 }
 
+enum SessionProgressState {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  PARTIALLY_COMPLETED
+  POSTPONED
+  CANCELLED
+  SKIPPED
+}
+
 enum TimelineMutationType {
   OVERRIDE
   RESCHEDULE
@@ -426,6 +436,12 @@ enum TimelineMutationType {
   MODE_CHANGE
   ROOM_CHANGE
   SEQUENCE_REBUILD
+  SESSION_COMPLETED
+  SESSION_PARTIAL
+  SESSION_POSTPONED
+  SESSION_SKIPPED
+  SESSION_REOPENED
+  SESSION_PROGRESS_UPDATED
 }
 
 model Course {
@@ -454,27 +470,36 @@ model Course {
 }
 
 model CourseSession {
-  id             String              @id @default(cuid())
-  courseId       String
-  sequenceNumber Int
-  sessionType    CourseSessionType   @default(CLASS)
-  plannedDate    DateTime
-  actualDate     DateTime?
-  startTime      String              // Format: "HH:MM"
-  endTime        String              // Format: "HH:MM"
-  status         CourseSessionStatus @default(SCHEDULED)
-  sessionMode    CourseSessionMode
-  room           String?
-  meetingLink    String?
-  notes          String?
-  deletedAt      DateTime?
+  id                  String               @id @default(cuid())
+  courseId            String
+  sequenceNumber      Int
+  sessionType         CourseSessionType    @default(CLASS)
+  plannedDate         DateTime
+  actualDate          DateTime?
+  startTime           String               // Format: "HH:MM"
+  endTime             String               // Format: "HH:MM"
+  status              CourseSessionStatus  @default(SCHEDULED)
+  sessionMode         CourseSessionMode
+  room                String?
+  meetingLink         String?
+  notes               String?
+  deletedAt           DateTime?
 
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  progressState       SessionProgressState @default(NOT_STARTED)
+  progressPercentage  Int                  @default(0)
+  completedAt         DateTime?
+  actualStartTime     DateTime?
+  actualEndTime       DateTime?
+  executionNotes      String?
+  executionMetadata   Json?
+  wasActuallyHeld     Boolean              @default(false)
 
-  course         Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  events         Event[]
-  mutationLogs   TimelineMutationLog[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  course              Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  events              Event[]
+  mutationLogs        TimelineMutationLog[]
 
   @@index([courseId])
   @@index([courseId, sequenceNumber])
@@ -491,6 +516,10 @@ model TimelineMutationLog {
   newState          Json?
   reason            String?
   createdAt         DateTime             @default(now())
+
+  actorUserId       String?
+  actorType         String?              @default("USER") // e.g. "USER", "SYSTEM", "CRON"
+  triggerSource     String?              @default("WEB_INTERFACE") // e.g. "WEB_INTERFACE", "API", "MUTATION_SHIFTER"
 
   user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   course            Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)

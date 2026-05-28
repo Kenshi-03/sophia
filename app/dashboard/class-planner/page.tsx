@@ -35,6 +35,14 @@ interface CourseSession {
   room?: string | null;
   meetingLink?: string | null;
   notes?: string | null;
+  progressState: string;
+  progressPercentage: number;
+  completedAt?: string | null;
+  actualStartTime?: string | null;
+  actualEndTime?: string | null;
+  executionNotes?: string | null;
+  wasActuallyHeld: boolean;
+  updatedAt: string;
 }
 
 interface TimelineMutationLog {
@@ -135,6 +143,154 @@ export default function ClassPlannerPage() {
   });
 
   const [cooldownWarning, setCooldownWarning] = useState("");
+
+  // Progress tracking states & forms
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progressError, setProgressError] = useState("");
+  const [submittingProgress, setSubmittingProgress] = useState(false);
+  const [progressForm, setProgressForm] = useState({
+    state: "NOT_STARTED",
+    percentage: 0,
+    notes: "",
+    actualStartTime: "",
+    actualEndTime: "",
+    allowOverride: false,
+    bypassTimestamps: false,
+    reason: "",
+  });
+
+  const openProgressModal = (session: CourseSession) => {
+    setActiveSession(session);
+    setProgressError("");
+    
+    // Auto-populate actual times with planned times as a convenient fallback
+    const todayStr = session.plannedDate.split("T")[0];
+    const plannedStartISO = `${todayStr}T${session.startTime}:00`;
+    const plannedEndISO = `${todayStr}T${session.endTime}:00`;
+
+    setProgressForm({
+      state: session.progressState || "NOT_STARTED",
+      percentage: session.progressPercentage || 0,
+      notes: session.executionNotes || "",
+      actualStartTime: session.actualStartTime 
+        ? session.actualStartTime.substring(0, 16) 
+        : plannedStartISO.substring(0, 16),
+      actualEndTime: session.actualEndTime 
+        ? session.actualEndTime.substring(0, 16) 
+        : plannedEndISO.substring(0, 16),
+      allowOverride: false,
+      bypassTimestamps: false,
+      reason: "",
+    });
+    setShowProgressModal(true);
+  };
+
+  const handleProgressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      setProgressError("");
+      setSubmittingProgress(true);
+
+      const res = await fetch(`/api/academic/sessions/${activeSession.id}/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          state: progressForm.state,
+          percentage: progressForm.state === "PARTIALLY_COMPLETED" || progressForm.state === "IN_PROGRESS"
+            ? Number(progressForm.percentage)
+            : undefined,
+          notes: progressForm.notes,
+          actualStartTime: progressForm.actualStartTime ? new Date(progressForm.actualStartTime).toISOString() : null,
+          actualEndTime: progressForm.actualEndTime ? new Date(progressForm.actualEndTime).toISOString() : null,
+          reason: progressForm.reason || progressForm.notes || `State updated to ${progressForm.state}`,
+          lastUpdatedAt: activeSession.updatedAt,
+          allowOverride: progressForm.allowOverride,
+          bypassTimestamps: progressForm.bypassTimestamps,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setShowProgressModal(false);
+        if (selectedCourse) {
+          await selectCourse(selectedCourse.id);
+        }
+        await fetchCourses();
+      } else {
+        setProgressError(data.error || "Gagal memperbarui progres sesi.");
+      }
+    } catch (err) {
+      console.error(err);
+      setProgressError("Kesalahan koneksi saat menyimpan progres.");
+    } finally {
+      setSubmittingProgress(false);
+    }
+  };
+
+  const handleQuickCompleteToggle = async (session: CourseSession) => {
+    const isCurrentlyCompleted = session.progressState === "COMPLETED";
+
+    try {
+      setError("");
+      
+      if (isCurrentlyCompleted) {
+        if (!confirm(`Apakah Anda yakin ingin membuka kembali Sesi ${session.sequenceNumber} yang sudah selesai?`)) {
+          return;
+        }
+
+        const res = await fetch(`/api/academic/sessions/${session.id}/progress`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            state: "IN_PROGRESS",
+            percentage: 50,
+            notes: session.executionNotes,
+            reason: "Quick complete toggled off - reopening to in-progress",
+            lastUpdatedAt: session.updatedAt,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          if (selectedCourse) await selectCourse(selectedCourse.id);
+          await fetchCourses();
+        } else {
+          setError(data.error || "Gagal membuka kembali sesi.");
+        }
+      } else {
+        const todayStr = session.plannedDate.split("T")[0];
+        const plannedStartISO = new Date(`${todayStr}T${session.startTime}:00`).toISOString();
+        const plannedEndISO = new Date(`${todayStr}T${session.endTime}:00`).toISOString();
+
+        const res = await fetch(`/api/academic/sessions/${session.id}/progress`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            state: "COMPLETED",
+            percentage: 100,
+            actualStartTime: plannedStartISO,
+            actualEndTime: plannedEndISO,
+            bypassTimestamps: true,
+            notes: session.executionNotes || "Sesi selesai via quick-complete.",
+            lastUpdatedAt: session.updatedAt,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          if (selectedCourse) await selectCourse(selectedCourse.id);
+          await fetchCourses();
+        } else {
+          setError(data.error || "Gagal menandai sesi selesai.");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan koneksi saat mengubah status penyelesaian.");
+    }
+  };
 
   // Fetch Courses
   const fetchCourses = async () => {
@@ -381,7 +537,9 @@ export default function ClassPlannerPage() {
 
   // Calculate Progress Stats
   const getProgress = (course: Course) => {
-    const completed = course.sessions.filter((s) => s.status === "COMPLETED" || s.status === "SKIPPED").length;
+    const completed = course.sessions.filter(
+      (s) => s.progressState === "COMPLETED" || s.progressState === "PARTIALLY_COMPLETED" || s.progressState === "SKIPPED"
+    ).length;
     const percentage = Math.round((completed / course.totalSessions) * 100);
     return { completed, total: course.totalSessions, percentage };
   };
@@ -555,9 +713,15 @@ export default function ClassPlannerPage() {
 
                 <div className="space-y-3 relative before:absolute before:top-2 before:bottom-2 before:left-6 before:w-0.5 before:bg-white/5">
                   {selectedCourse.sessions.map((session, index) => {
-                    const isSkipped = session.status === "SKIPPED";
-                    const isRescheduled = session.status === "RESCHEDULED";
-                    const isCompleted = session.status === "COMPLETED";
+                    const isSkippedState = session.progressState === "SKIPPED";
+                    const isCancelledState = session.progressState === "CANCELLED";
+                    const isCompletedState = session.progressState === "COMPLETED";
+                    const isPartialState = session.progressState === "PARTIALLY_COMPLETED";
+                    const isPostponedState = session.progressState === "POSTPONED";
+                    const isInProgressState = session.progressState === "IN_PROGRESS";
+
+                    const isSkippedStatus = session.status === "SKIPPED";
+                    const isRescheduledStatus = session.status === "RESCHEDULED";
 
                     // Session type styling
                     let typeColor = "bg-[#8083ff]/10 text-[#8083ff] border-[#8083ff]/20";
@@ -575,31 +739,54 @@ export default function ClassPlannerPage() {
                     else if (session.sessionMode === "OFFLINE") modeColor = "bg-[#f59e0b]/10 text-[#f59e0b] border-[#f59e0b]/20";
                     else if (session.sessionMode === "HYBRID") modeColor = "bg-[#ec4899]/10 text-[#ec4899] border-[#ec4899]/20";
 
+                    // Left Circle Sequence styling based on execution progress
+                    let circleColor = "bg-[#17191d] border-white/10 text-white";
+                    if (isCompletedState) {
+                      circleColor = "bg-[#0d9488]/20 border-[#0d9488] text-[#0d9488] shadow-lg shadow-[#0d9488]/10";
+                    } else if (isPartialState) {
+                      circleColor = "bg-[#06b6d4]/20 border-dashed border-[#06b6d4] text-[#06b6d4]";
+                    } else if (isInProgressState) {
+                      circleColor = "bg-[#8083ff]/20 border-[#8083ff] text-[#8083ff] animate-pulse";
+                    } else if (isPostponedState) {
+                      circleColor = "bg-[#f97316]/20 border-[#f97316] text-[#f97316]";
+                    } else if (isSkippedState || isCancelledState) {
+                      circleColor = "bg-[#111316] border-white/5 text-[#c7c4d7]/40";
+                    } else if (isRescheduledStatus) {
+                      circleColor = "bg-[#f97316]/20 border-[#f97316] text-[#f97316]";
+                    }
+
                     return (
                       <div 
                         key={session.id} 
                         className={`flex gap-4 relative group items-start transition-all duration-300 ${
-                          isSkipped ? "opacity-50" : ""
+                          isSkippedState || isCancelledState ? "opacity-50" : ""
                         }`}
                       >
                         {/* Left sequence circle */}
-                        <div className={`h-12 w-12 rounded-full border flex items-center justify-center text-xs font-mono font-bold shrink-0 z-10 transition-colors ${
-                          isSkipped 
-                            ? "bg-[#111316] border-white/5 text-[#c7c4d7]/40" 
-                            : isCompleted 
-                              ? "bg-[#0d9488]/20 border-[#0d9488] text-[#0d9488]"
-                              : isRescheduled
-                                ? "bg-[#f97316]/20 border-[#f97316] text-[#f97316]"
-                                : "bg-[#17191d] border-white/10 text-white"
-                        }`}>
+                        <div className={`h-12 w-12 rounded-full border flex items-center justify-center text-xs font-mono font-bold shrink-0 z-10 transition-colors ${circleColor}`}>
                           {session.sequenceNumber}
                         </div>
 
                         {/* Session details block */}
                         <div className="flex-1 glass-panel p-4 rounded-2xl border border-white/5 bg-[#17191d]/60 hover:bg-[#17191d]/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="space-y-2">
+                          <div className="space-y-2 flex-1">
                             {/* Line 1: Date and status indicators */}
                             <div className="flex flex-wrap items-center gap-2 text-xs">
+                              {/* Quick Complete Toggler Checkbox */}
+                              {!isCancelledState && (
+                                <button 
+                                  onClick={() => handleQuickCompleteToggle(session)}
+                                  className={`h-5 w-5 rounded-md border flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                                    isCompletedState
+                                      ? "bg-[#0d9488] border-[#0d9488] text-white shadow-lg shadow-[#0d9488]/15 hover:bg-[#0d9488]/90"
+                                      : "border-white/20 hover:border-[#8083ff] hover:bg-white/5 text-transparent"
+                                  }`}
+                                  title={isCompletedState ? "Buka kembali sesi (Reopen)" : "Tandai Selesai Cepat (Quick Complete)"}
+                                >
+                                  <CheckCircle2 size={12} className="stroke-[3] text-white" />
+                                </button>
+                              )}
+
                               <span className="font-bold text-white font-mono">
                                 {new Date(session.plannedDate).toLocaleDateString("id-ID", {
                                   weekday: "long",
@@ -613,20 +800,41 @@ export default function ClassPlannerPage() {
                                 <Clock size={12} /> {session.startTime} - {session.endTime}
                               </span>
 
-                              {/* Status badge */}
-                              {isSkipped && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffb4ab] border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 px-2 py-0.5 rounded-full">
+                              {/* Progress state chips */}
+                              {isCompletedState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#0d9488] border border-[#0d9488]/20 bg-[#0d9488]/5 px-2 py-0.5 rounded-full font-mono">
+                                  Completed
+                                </span>
+                              )}
+                              {isPartialState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#06b6d4] border border-[#06b6d4]/20 bg-[#06b6d4]/5 px-2 py-0.5 rounded-full font-mono">
+                                  Partial ({session.progressPercentage}%)
+                                </span>
+                              )}
+                              {isInProgressState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#8083ff] border border-[#8083ff]/20 bg-[#8083ff]/5 px-2 py-0.5 rounded-full font-mono animate-pulse">
+                                  In Progress ({session.progressPercentage}%)
+                                </span>
+                              )}
+                              {isPostponedState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f59e0b] border border-[#f59e0b]/20 bg-[#f59e0b]/5 px-2 py-0.5 rounded-full font-mono">
+                                  Postponed
+                                </span>
+                              )}
+                              {isSkippedState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffb4ab] border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 px-2 py-0.5 rounded-full font-mono">
                                   Skipped
                                 </span>
                               )}
-                              {isRescheduled && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316] border border-[#f97316]/20 bg-[#f97316]/5 px-2 py-0.5 rounded-full">
-                                  Override
+                              {isCancelledState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffb4ab]/70 border border-[#ffb4ab]/10 bg-[#ffb4ab]/5 px-2 py-0.5 rounded-full font-mono">
+                                  Cancelled
                                 </span>
                               )}
-                              {isCompleted && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#0d9488] border border-[#0d9488]/20 bg-[#0d9488]/5 px-2 py-0.5 rounded-full">
-                                  Complete
+
+                              {isRescheduledStatus && !isPostponedState && !isSkippedState && !isCancelledState && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316] border border-[#f97316]/20 bg-[#f97316]/5 px-2 py-0.5 rounded-full">
+                                  Override
                                 </span>
                               )}
                             </div>
@@ -658,6 +866,16 @@ export default function ClassPlannerPage() {
                                   <LinkIcon size={12} /> Link
                                 </a>
                               )}
+
+                              {/* Micro horizontal progress indicator bar */}
+                              {(isInProgressState || isPartialState) && (
+                                <div className="w-20 h-1 bg-white/5 rounded-full overflow-hidden ml-2 hidden sm:block">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-[#8083ff] to-[#06b6d4] rounded-full transition-all duration-300"
+                                    style={{ width: `${session.progressPercentage}%` }}
+                                  />
+                                </div>
+                              )}
                             </div>
 
                             {/* Notes display */}
@@ -667,11 +885,38 @@ export default function ClassPlannerPage() {
                                 <span>{session.notes}</span>
                               </div>
                             )}
+
+                            {/* Execution notes and report */}
+                            {session.executionNotes && (
+                              <div className="text-[11px] text-[#c7c4d7]/80 bg-[#0d9488]/5 border border-[#0d9488]/10 p-3 rounded-2xl flex flex-col gap-1 mt-2">
+                                <div className="flex items-center gap-1.5 font-bold text-[#0d9488]">
+                                  <CheckCircle2 size={12} className="shrink-0 text-[#0d9488]" />
+                                  <span>Execution Report</span>
+                                </div>
+                                <p className="mt-0.5 text-white font-sans">{session.executionNotes}</p>
+                                {(session.actualStartTime || session.completedAt) && (
+                                  <p className="text-[9px] text-[#c7c4d7]/40 font-mono mt-1">
+                                    {session.actualStartTime && `Start: ${new Date(session.actualStartTime).toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' })}`}
+                                    {session.actualEndTime && ` • End: ${new Date(session.actualEndTime).toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' })}`}
+                                    {session.completedAt && ` • Saved: ${new Date(session.completedAt).toLocaleString("id-ID", { dateStyle: 'short', timeStyle: 'short' })}`}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Action controls (only for non-completed courses) */}
+                          {/* Action controls (only for non-cancelled/non-archived courses) */}
                           <div className="flex items-center gap-2 shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                            {!isSkipped && (
+                            {/* Track Progress Edit Button */}
+                            <button
+                              onClick={() => openProgressModal(session)}
+                              className="p-2 border border-[#0d9488]/20 bg-[#0d9488]/5 text-[#0d9488] hover:bg-[#0d9488]/10 rounded-xl transition-all cursor-pointer"
+                              title="Update Progress State"
+                            >
+                              <Clock size={14} />
+                            </button>
+
+                            {!isSkippedState && !isCancelledState && (
                               <>
                                 <button
                                   onClick={() => openOverrideModal(session)}
@@ -1246,6 +1491,167 @@ export default function ClassPlannerPage() {
                   className="px-4 py-2 bg-[#ffb4ab] text-[#601410] text-xs font-semibold rounded-xl hover:bg-[#ffb4ab]/90 transition-all cursor-pointer active:scale-95"
                 >
                   Confirm Action
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Interactive Session Progress Tracking Modal */}
+      {showProgressModal && activeSession && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-lg mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowProgressModal(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleProgressSubmit} className="space-y-4 text-left">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <Clock size={18} className="text-[#0d9488]" />
+                <h3 className="font-bold text-sm text-white">Track Academic Execution Progress</h3>
+              </div>
+
+              <div className="p-3 bg-white/5 rounded-2xl border border-white/5 text-xs text-[#c7c4d7]">
+                <p className="font-bold text-white mb-1">Session Info:</p>
+                <p>Course: <span className="text-white font-medium">{selectedCourse?.title}</span></p>
+                <p>Sequence: <span className="text-[#8083ff] font-mono font-bold">Pertemuan {activeSession.sequenceNumber}</span> ({activeSession.sessionType})</p>
+                <p>Scheduled: <span className="text-white font-mono">{new Date(activeSession.plannedDate).toLocaleDateString("id-ID", { dateStyle: 'medium' })} • {activeSession.startTime} - {activeSession.endTime}</span></p>
+              </div>
+
+              {progressError && (
+                <div className="p-3 bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 rounded-xl text-[11px] text-[#ffb4ab] flex gap-2 items-start font-sans">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>{progressError}</span>
+                </div>
+              )}
+
+              {/* Progress State Selection */}
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Operational Execution State</label>
+                <select
+                  value={progressForm.state}
+                  onChange={(e) => setProgressForm({ ...progressForm, state: e.target.value })}
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
+                >
+                  <option value="NOT_STARTED">NOT_STARTED — Belum Dimulai</option>
+                  <option value="IN_PROGRESS">IN_PROGRESS — Dalam Proses</option>
+                  <option value="COMPLETED">COMPLETED — Selesai Penuh (100%)</option>
+                  <option value="PARTIALLY_COMPLETED">PARTIALLY_COMPLETED — Selesai Sebagian (1-99%)</option>
+                  <option value="POSTPONED">POSTPONED — Ditunda / Jadwal Ulang</option>
+                  <option value="SKIPPED">SKIPPED — Dilewati Tanpa Pengganti</option>
+                  <option value="CANCELLED">CANCELLED — Dibatalkan Permanen</option>
+                </select>
+              </div>
+
+              {/* Percentage Slider (shown for partial/in-progress) */}
+              {(progressForm.state === "PARTIALLY_COMPLETED" || progressForm.state === "IN_PROGRESS") && (
+                <div className="space-y-2 border border-white/5 bg-white/5 p-3 rounded-xl">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-[#c7c4d7]">Completion Percentage</span>
+                    <span className="font-bold text-[#8083ff] font-mono">{progressForm.percentage}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={progressForm.state === "PARTIALLY_COMPLETED" ? 1 : 0}
+                    max={99}
+                    value={progressForm.percentage}
+                    onChange={(e) => setProgressForm({ ...progressForm, percentage: Number(e.target.value) })}
+                    className="w-full accent-[#8083ff] cursor-pointer"
+                  />
+                  <p className="text-[9px] text-[#c7c4d7]/60">
+                    {progressForm.state === "PARTIALLY_COMPLETED" 
+                      ? "Partially completed memerlukan progres antara 1% - 99%." 
+                      : "In-progress default adalah 50%."}
+                  </p>
+                </div>
+              )}
+
+              {/* Execution Timestamps */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Actual Start Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={progressForm.actualStartTime}
+                    onChange={(e) => setProgressForm({ ...progressForm, actualStartTime: e.target.value })}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Actual End Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={progressForm.actualEndTime}
+                    onChange={(e) => setProgressForm({ ...progressForm, actualEndTime: e.target.value })}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Execution Notes */}
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Execution Notes / Report</label>
+                <textarea
+                  value={progressForm.notes}
+                  onChange={(e) => setProgressForm({ ...progressForm, notes: e.target.value })}
+                  placeholder="e.g. Kelas disingkat karena rapat fakultas, dosen menerangkan bab 3..."
+                  rows={2}
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
+                />
+              </div>
+
+              {/* Reason (Audit Mutation Log) */}
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Reason for Mutation / Correction</label>
+                <input
+                  type="text"
+                  value={progressForm.reason}
+                  onChange={(e) => setProgressForm({ ...progressForm, reason: e.target.value })}
+                  placeholder="e.g. Koreksi input progress oleh mahasiswa..."
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
+                />
+              </div>
+
+              {/* Special overrides flags */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-white/5 pt-3">
+                <label className="flex items-center gap-2 text-[10px] text-white font-bold cursor-pointer hover:text-white/80 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={progressForm.allowOverride}
+                    onChange={(e) => setProgressForm({ ...progressForm, allowOverride: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span>Bypass governance locked period</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-[10px] text-white font-bold cursor-pointer hover:text-white/80 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={progressForm.bypassTimestamps}
+                    onChange={(e) => setProgressForm({ ...progressForm, bypassTimestamps: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span>Bypass actual times constraint</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowProgressModal(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingProgress}
+                  className="px-4 py-2 bg-[#0d9488] text-white text-xs font-semibold rounded-xl hover:bg-[#0d9488]/90 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submittingProgress ? "Saving..." : "Save Progress"}
                 </button>
               </div>
             </form>
