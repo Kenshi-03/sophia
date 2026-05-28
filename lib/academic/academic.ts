@@ -73,97 +73,129 @@ export async function generateSemesterTimeline(params: CourseCreationParams) {
   const hasGoogleAccount = dbUser && dbUser.accounts.length > 0;
   const isGoogleCalValid = academicConfig.googleCalendarId && !academicConfig.googleCalendarId.startsWith("local-");
 
-  // Run Course creation and Session timeline generation inside a transaction
-  return await prisma.$transaction(async (tx) => {
-    // 1. Create Course
-    const course = await tx.course.create({
-      data: {
-        userId,
-        title,
-        lecturer,
-        semester,
-        academicYear,
-        totalSessions,
-        defaultSessionMode,
-        defaultLocation: defaultLocation || null,
-        defaultMeetingLink: defaultMeetingLink || null,
-        categoryType: CognitiveCategoryType.ACADEMIC,
-      },
-    });
+  // --- Phase 1: DB-only transaction (fast, no outbound HTTP calls) ---
+  type SessionEventPair = {
+    eventId: string;
+    eventTitle: string;
+    eventStart: Date;
+    eventEnd: Date;
+    eventLocation: string | null;
+    sequenceNumber: number;
+    description: string;
+  };
 
-    const sessionsData = [];
-    const baseDate = new Date(firstSessionDate);
-
-    // 2. Generate CourseSessions
-    for (let i = 0; i < totalSessions; i++) {
-      const sessionDate = new Date(baseDate);
-      sessionDate.setDate(baseDate.getDate() + i * 7);
-
-      const sequenceNumber = i + 1;
-      let sessionType: CourseSessionType = CourseSessionType.CLASS;
-
-      // Create CourseSession record
-      const session = await tx.courseSession.create({
-        data: {
-          courseId: course.id,
-          sequenceNumber,
-          sessionType,
-          plannedDate: sessionDate,
-          startTime,
-          endTime,
-          sessionMode: defaultSessionMode,
-          room: defaultSessionMode !== CourseSessionMode.ONLINE ? (defaultLocation || null) : null,
-          meetingLink: defaultSessionMode !== CourseSessionMode.OFFLINE ? (defaultMeetingLink || null) : null,
-          status: CourseSessionStatus.SCHEDULED,
-        },
-      });
-
-      // Format Event Title
-      const eventTitle = `[Class] ${title} - Pertemuan ${sequenceNumber}`;
-
-      // Calculate Dates for Event
-      const eventStart = combineDateAndTime(sessionDate, startTime);
-      const eventEnd = combineDateAndTime(sessionDate, endTime);
-
-      // Create corresponding Event record
-      const event = await tx.event.create({
+  const { course, sessions: sessionsData, sessionEventPairs } = await prisma.$transaction(
+    async (tx) => {
+      // 1. Create Course
+      const course = await tx.course.create({
         data: {
           userId,
-          calendarId: academicConfig.id,
-          courseSessionId: session.id,
-          title: eventTitle,
-          description: `Jadwal perkuliahan ${title} - Pertemuan ${sequenceNumber}. Dosen: ${lecturer}.`,
-          startTime: eventStart,
-          endTime: eventEnd,
-          location: defaultSessionMode === CourseSessionMode.ONLINE ? (defaultMeetingLink || null) : (defaultLocation || null),
+          title,
+          lecturer,
+          semester,
+          academicYear,
+          totalSessions,
+          defaultSessionMode,
+          defaultLocation: defaultLocation || null,
+          defaultMeetingLink: defaultMeetingLink || null,
+          categoryType: CognitiveCategoryType.ACADEMIC,
         },
       });
 
-      // Sync with Google Calendar if connected
-      if (hasGoogleAccount && isGoogleCalValid) {
-        try {
-          const googleEventId = await createGEvent(userId, academicConfig.googleCalendarId, {
+      const sessionsData = [];
+      const sessionEventPairs: SessionEventPair[] = [];
+      const baseDate = new Date(firstSessionDate);
+
+      // 2. Generate CourseSessions
+      for (let i = 0; i < totalSessions; i++) {
+        const sessionDate = new Date(baseDate);
+        sessionDate.setDate(baseDate.getDate() + i * 7);
+
+        const sequenceNumber = i + 1;
+        const sessionType: CourseSessionType = CourseSessionType.CLASS;
+
+        // Create CourseSession record
+        const session = await tx.courseSession.create({
+          data: {
+            courseId: course.id,
+            sequenceNumber,
+            sessionType,
+            plannedDate: sessionDate,
+            startTime,
+            endTime,
+            sessionMode: defaultSessionMode,
+            room: defaultSessionMode !== CourseSessionMode.ONLINE ? (defaultLocation || null) : null,
+            meetingLink: defaultSessionMode !== CourseSessionMode.OFFLINE ? (defaultMeetingLink || null) : null,
+            status: CourseSessionStatus.SCHEDULED,
+          },
+        });
+
+        // Format Event
+        const eventTitle = `[Class] ${title} - Pertemuan ${sequenceNumber}`;
+        const eventStart = combineDateAndTime(sessionDate, startTime);
+        const eventEnd = combineDateAndTime(sessionDate, endTime);
+        const eventLocation = defaultSessionMode === CourseSessionMode.ONLINE
+          ? (defaultMeetingLink || null)
+          : (defaultLocation || null);
+        const description = `Jadwal perkuliahan ${title} - Pertemuan ${sequenceNumber}. Dosen: ${lecturer}.`;
+
+        // Create corresponding Event record (no googleEventId yet)
+        const event = await tx.event.create({
+          data: {
+            userId,
+            calendarId: academicConfig.id,
+            courseSessionId: session.id,
             title: eventTitle,
-            description: `Jadwal perkuliahan ${title} - Pertemuan ${sequenceNumber}. Dosen: ${lecturer}.`,
+            description,
             startTime: eventStart,
             endTime: eventEnd,
-            location: defaultSessionMode === CourseSessionMode.ONLINE ? (defaultMeetingLink || null) : (defaultLocation || null),
-          });
+            location: eventLocation,
+          },
+        });
 
-          await tx.event.update({
-            where: { id: event.id },
-            data: { googleEventId },
-          });
-        } catch (err) {
-          logger.error(`Failed to sync Academic Session ${sequenceNumber} to Google Calendar:`, err);
-        }
+        // Collect data needed for Google sync after transaction commits
+        sessionEventPairs.push({
+          eventId: event.id,
+          eventTitle,
+          eventStart,
+          eventEnd,
+          eventLocation,
+          sequenceNumber,
+          description,
+        });
+
+        sessionsData.push(session);
       }
 
-      sessionsData.push(session);
-    }
+      return { course, sessions: sessionsData, sessionEventPairs };
+    },
+    { timeout: 30000 } // generous timeout for large session counts (DB-only)
+  );
 
-    return { course, sessions: sessionsData };
-  });
+  // --- Phase 2: Google Calendar sync (outside transaction, failures are non-fatal) ---
+  if (hasGoogleAccount && isGoogleCalValid) {
+    for (const pair of sessionEventPairs) {
+      try {
+        const googleEventId = await createGEvent(userId, academicConfig.googleCalendarId, {
+          title: pair.eventTitle,
+          description: pair.description,
+          startTime: pair.eventStart,
+          endTime: pair.eventEnd,
+          location: pair.eventLocation,
+        });
+
+        // Patch the Event row with the returned Google Event ID
+        await prisma.event.update({
+          where: { id: pair.eventId },
+          data: { googleEventId },
+        });
+      } catch (err) {
+        logger.error(`Failed to sync Academic Session ${pair.sequenceNumber} to Google Calendar:`, err);
+      }
+    }
+  }
+
+  return { course, sessions: sessionsData };
 }
 
 export interface CollisionResult {
@@ -398,88 +430,114 @@ export async function shiftCourseSessions(
 
   const newState: any[] = [];
 
-  // Update records inside a database transaction
-  await prisma.$transaction(async (tx) => {
-    // A. Increment timeline version
-    await tx.course.update({
-      where: { id: courseId },
-      data: {
-        timelineVersion: course.timelineVersion + 1,
-      },
-    });
+  // Collect Google Calendar sync work for after the transaction
+  type ShiftGoogleSyncJob = {
+    googleEventId: string;
+    title: string;
+    description: string | null;
+    startTime: Date;
+    endTime: Date;
+    location: string | null;
+  };
+  const googleSyncJobs: ShiftGoogleSyncJob[] = [];
 
-    // B. Perform shift calculations
-    for (const session of sessionsToShift) {
-      const oldPlannedDate = new Date(session.plannedDate);
-      const newPlannedDate = new Date(oldPlannedDate);
-      newPlannedDate.setDate(oldPlannedDate.getDate() + daysToShift);
-
-      // Save to newState log trace
-      newState.push({
-        id: session.id,
-        sequenceNumber: session.sequenceNumber,
-        plannedDate: newPlannedDate.toISOString(),
-      });
-
-      // Update CourseSession record
-      await tx.courseSession.update({
-        where: { id: session.id },
+  // --- Phase 1: DB-only transaction (fast, no outbound HTTP calls) ---
+  await prisma.$transaction(
+    async (tx) => {
+      // A. Increment timeline version
+      await tx.course.update({
+        where: { id: courseId },
         data: {
-          plannedDate: newPlannedDate,
-          status: CourseSessionStatus.RESCHEDULED,
+          timelineVersion: course.timelineVersion + 1,
         },
       });
 
-      // Update associated Events
-      const associatedEvents = await tx.event.findMany({
-        where: { courseSessionId: session.id },
-      });
+      // B. Perform shift calculations
+      for (const session of sessionsToShift) {
+        const oldPlannedDate = new Date(session.plannedDate);
+        const newPlannedDate = new Date(oldPlannedDate);
+        newPlannedDate.setDate(oldPlannedDate.getDate() + daysToShift);
 
-      for (const event of associatedEvents) {
-        const eventStart = combineDateAndTime(newPlannedDate, session.startTime);
-        const eventEnd = combineDateAndTime(newPlannedDate, session.endTime);
+        // Save to newState log trace
+        newState.push({
+          id: session.id,
+          sequenceNumber: session.sequenceNumber,
+          plannedDate: newPlannedDate.toISOString(),
+        });
 
-        // Update local Event record
-        await tx.event.update({
-          where: { id: event.id },
+        // Update CourseSession record
+        await tx.courseSession.update({
+          where: { id: session.id },
           data: {
-            startTime: eventStart,
-            endTime: eventEnd,
+            plannedDate: newPlannedDate,
+            status: CourseSessionStatus.RESCHEDULED,
           },
         });
 
-        // Sync with Google Calendar
-        if (hasGoogleAccount && isGoogleCalValid && event.googleEventId) {
-          try {
-            await updateGEvent(userId, config.googleCalendarId, event.googleEventId, {
+        // Update associated Events
+        const associatedEvents = await tx.event.findMany({
+          where: { courseSessionId: session.id },
+        });
+
+        for (const event of associatedEvents) {
+          const eventStart = combineDateAndTime(newPlannedDate, session.startTime);
+          const eventEnd = combineDateAndTime(newPlannedDate, session.endTime);
+
+          // Update local Event record
+          await tx.event.update({
+            where: { id: event.id },
+            data: {
+              startTime: eventStart,
+              endTime: eventEnd,
+            },
+          });
+
+          // Queue Google Calendar sync job for after transaction commits
+          if (hasGoogleAccount && isGoogleCalValid && event.googleEventId) {
+            googleSyncJobs.push({
+              googleEventId: event.googleEventId,
               title: event.title,
               description: event.description,
               startTime: eventStart,
               endTime: eventEnd,
               location: event.location,
             });
-          } catch (err) {
-            logger.error(`Failed to update Google Calendar event ${event.googleEventId} during cascading shift:`, err);
           }
         }
       }
-    }
 
-    // C. Write the TimelineMutationLog
-    const type = daysToShift > 0 ? TimelineMutationType.SHIFT_FORWARD : TimelineMutationType.SHIFT_BACKWARD;
-    await tx.timelineMutationLog.create({
-      data: {
-        userId,
-        courseId,
-        courseSessionId: sessionsToShift[0].id, // Anchor on first shifted session
-        mutationType: type,
-        affectedSequences,
-        previousState: JSON.stringify(previousState),
-        newState: JSON.stringify(newState),
-        reason: reason || `Cascading shift of remaining sessions starting from sequence ${startSequenceNumber} by ${daysToShift} days`,
-      },
-    });
-  });
+      // C. Write the TimelineMutationLog
+      const type = daysToShift > 0 ? TimelineMutationType.SHIFT_FORWARD : TimelineMutationType.SHIFT_BACKWARD;
+      await tx.timelineMutationLog.create({
+        data: {
+          userId,
+          courseId,
+          courseSessionId: sessionsToShift[0].id, // Anchor on first shifted session
+          mutationType: type,
+          affectedSequences,
+          previousState: JSON.stringify(previousState),
+          newState: JSON.stringify(newState),
+          reason: reason || `Cascading shift of remaining sessions starting from sequence ${startSequenceNumber} by ${daysToShift} days`,
+        },
+      });
+    },
+    { timeout: 30000 } // generous timeout for large session counts (DB-only)
+  );
+
+  // --- Phase 2: Google Calendar sync (outside transaction, failures are non-fatal) ---
+  for (const job of googleSyncJobs) {
+    try {
+      await updateGEvent(userId, config.googleCalendarId, job.googleEventId, {
+        title: job.title,
+        description: job.description,
+        startTime: job.startTime,
+        endTime: job.endTime,
+        location: job.location,
+      });
+    } catch (err) {
+      logger.error(`Failed to update Google Calendar event ${job.googleEventId} during cascading shift:`, err);
+    }
+  }
 
   return { success: true, updatedCount: sessionsToShift.length };
 }
