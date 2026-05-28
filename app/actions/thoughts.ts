@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db/prisma"
 import { MemoryManager } from "@/lib/ai/memory/memory-manager"
 import { revalidatePath } from "next/cache"
 
-export async function getThoughtsAction() {
+export async function getThoughtsAction(limit: number = 20, offset: number = 0) {
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -19,6 +19,15 @@ export async function getThoughtsAction() {
       },
       orderBy: {
         createdAt: "desc"
+      },
+      take: limit,
+      skip: offset,
+    })
+
+    const totalCount = await prisma.thought.count({
+      where: {
+        userId: user.id,
+        deletedAt: null,
       }
     })
 
@@ -29,7 +38,9 @@ export async function getThoughtsAction() {
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
         deletedAt: t.deletedAt ? t.deletedAt.toISOString() : null,
-      }))
+      })),
+      hasMore: offset + thoughts.length < totalCount,
+      totalCount,
     }
   } catch (error) {
     console.error("Failed to fetch thoughts:", error)
@@ -48,6 +59,7 @@ export async function createThoughtAction(content: string, tags: string[] = []) 
 
     revalidatePath("/dashboard")
     revalidatePath("/dashboard/memory")
+    revalidatePath("/dashboard/notes")
     return {
       success: true,
       thought: {
@@ -74,6 +86,7 @@ export async function deleteThoughtAction(thoughtId: string) {
 
     revalidatePath("/dashboard")
     revalidatePath("/dashboard/memory")
+    revalidatePath("/dashboard/notes")
     return { success: true, thoughtId }
   } catch (error) {
     console.error("Failed to delete thought:", error)
