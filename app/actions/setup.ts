@@ -3,8 +3,8 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { revalidatePath } from "next/cache";
-
 import { encrypt } from "@/lib/security/encryption";
+import { CognitiveCategoryType } from "@prisma/client";
 
 interface CategoryInput {
   name: string;
@@ -53,27 +53,45 @@ export async function saveSetupAction(formData: SetupInput) {
       },
     });
 
-    // 2. Create Calendar Categories for the user
+    // 2. Create Calendar Configurations for the user
     for (const cat of formData.categories) {
       if (cat.name.trim() && cat.googleCalId.trim()) {
-        await prisma.calendarCategory.upsert({
+        let enumType: CognitiveCategoryType = CognitiveCategoryType.GENERAL;
+        const normalized = cat.categoryType.toUpperCase().replace("-", "_");
+        if (Object.values(CognitiveCategoryType).includes(normalized as any)) {
+          enumType = normalized as CognitiveCategoryType;
+        }
+
+        const existing = await prisma.calendarConfig.findFirst({
           where: {
-            googleCalId: cat.googleCalId,
-          },
-          update: {
-            name: cat.name,
-            categoryType: cat.categoryType,
-            color: cat.color,
             userId: user.id,
-          },
-          create: {
-            name: cat.name,
-            categoryType: cat.categoryType,
-            googleCalId: cat.googleCalId,
-            color: cat.color,
-            userId: user.id,
+            googleCalendarId: cat.googleCalId,
+            deletedAt: null,
           },
         });
+
+        if (existing) {
+          await prisma.calendarConfig.update({
+            where: { id: existing.id },
+            data: {
+              cognitiveCategory: cat.name,
+              categoryType: enumType,
+              color: cat.color,
+            },
+          });
+        } else {
+          await prisma.calendarConfig.create({
+            data: {
+              userId: user.id,
+              cognitiveCategory: cat.name,
+              categoryType: enumType,
+              googleCalendarId: cat.googleCalId,
+              color: cat.color,
+              isDefault: cat.name.toLowerCase().includes("deep"),
+              isActive: true,
+            },
+          });
+        }
       }
     }
 

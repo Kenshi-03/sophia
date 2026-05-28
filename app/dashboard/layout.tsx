@@ -14,9 +14,7 @@ export default async function DashboardLayout({
   const { session, user } = await requireSession()
   const settings = await getSettings(user.id)
 
-  if (!settings.isOnboarded) {
-    redirect("/setup")
-  }
+  // Bypass forced onboarding redirect to allow instant workspace access
 
   const settingsData = {
     userName: user.name || "SOPHIA Dev User",

@@ -44,12 +44,26 @@ export async function PATCH(
 
     // Verify calendarId if changed
     const targetCalendarId = calendarId || existingEvent.calendarId;
-    const category = await prisma.calendarCategory.findUnique({
+    const category = await prisma.calendarConfig.findFirst({
       where: { id: targetCalendarId, userId: dbUser.id },
     });
 
     if (!category) {
-      return NextResponse.json({ error: "Invalid calendar category" }, { status: 400 });
+      return NextResponse.json({ error: "Kategori kalender tidak ditemukan." }, { status: 400 });
+    }
+
+    // Active/integrity validation during event update:
+    // Reject event update if CalendarConfig is inactive, soft-deleted, or has invalid mapping
+    if (!category.isActive) {
+      return NextResponse.json({ error: "Kategori kognitif yang dipilih sedang tidak aktif." }, { status: 400 });
+    }
+
+    if (category.deletedAt !== null) {
+      return NextResponse.json({ error: "Kategori kognitif yang dipilih telah dihapus." }, { status: 400 });
+    }
+
+    if (!category.googleCalendarId || category.googleCalendarId.trim() === "") {
+      return NextResponse.json({ error: "Kategori kognitif tidak memiliki pemetaan Google Calendar yang valid." }, { status: 400 });
     }
 
     // 1. Update event locally
@@ -67,11 +81,11 @@ export async function PATCH(
 
     // 2. Sync edits to Google Calendar if credentials exist
     const hasGoogleAccount = dbUser.accounts.length > 0;
-    const isGoogleCalValid = category.googleCalId && !category.googleCalId.startsWith("local-");
+    const isGoogleCalValid = category.googleCalendarId && !category.googleCalendarId.startsWith("local-");
 
     if (hasGoogleAccount && isGoogleCalValid && existingEvent.googleEventId) {
       try {
-        await updateGoogleEvent(dbUser.id, category.googleCalId, existingEvent.googleEventId, {
+        await updateGoogleEvent(dbUser.id, category.googleCalendarId, existingEvent.googleEventId, {
           title: updatedEvent.title,
           description: updatedEvent.description,
           startTime: updatedEvent.startTime,
@@ -136,14 +150,14 @@ export async function DELETE(
     // 1. Delete on Google Calendar if valid
     const hasGoogleAccount = dbUser.accounts.length > 0;
     const isGoogleCalValid =
-      existingEvent.calendar?.googleCalId &&
-      !existingEvent.calendar.googleCalId.startsWith("local-");
+      existingEvent.calendar?.googleCalendarId &&
+      !existingEvent.calendar.googleCalendarId.startsWith("local-");
 
     if (hasGoogleAccount && isGoogleCalValid && existingEvent.googleEventId) {
       try {
         await deleteGoogleEvent(
           dbUser.id,
-          existingEvent.calendar.googleCalId,
+          existingEvent.calendar.googleCalendarId,
           existingEvent.googleEventId
         );
       } catch (err) {

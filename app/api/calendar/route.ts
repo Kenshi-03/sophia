@@ -5,7 +5,7 @@ import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
 import { createGoogleEvent } from "@/lib/google/calendar/create-event";
 import { invalidateUserCache } from "@/lib/redis";
 
-// GET: Fetch all calendar categories and events for the authenticated user
+// GET: Fetch all calendar configs and events for the authenticated user
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -13,13 +13,13 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Dynamic Seeding of Categories
+    // Seed default configurations if empty
     await seedDefaultCategoriesForUser(user.id);
 
-    // Retrieve categories and events
-    const categories = await prisma.calendarCategory.findMany({
-      where: { userId: user.id },
-      orderBy: { name: "asc" },
+    // Retrieve active and inactive configurations
+    const categories = await prisma.calendarConfig.findMany({
+      where: { userId: user.id, deletedAt: null },
+      orderBy: { cognitiveCategory: "asc" },
     });
 
     const dbEvents = await prisma.event.findMany({
@@ -28,9 +28,14 @@ export async function GET() {
       orderBy: { startTime: "asc" },
     });
 
-    // Format events for UI with cognitive metadata
+    // Format events for UI with cognitive metadata and safe fallbacks
     const events = dbEvents.map((event) => {
-      const catType = event.calendar?.categoryType || "";
+      const rawType = event.calendar?.categoryType || "GENERAL"
+      
+      // Safe Fallback Rule: If linked config is soft-deleted or inactive, fallback type to GENERAL
+      const isConfigValid = event.calendar && event.calendar.isActive && !event.calendar.deletedAt
+      const resolvedType = isConfigValid ? rawType : "GENERAL"
+      const catType = resolvedType.toLowerCase().replace("_", "-")
       
       // Calculate cognitive load weights based on categories
       let cognitiveLoad = 35; // Default moderate load
@@ -52,11 +57,11 @@ export async function GET() {
         googleEventId: event.googleEventId,
         calendarId: event.calendarId,
         color: event.calendar?.color || "#8083ff",
-        categoryName: event.calendar?.name || "General",
+        categoryName: event.calendar?.cognitiveCategory || "General",
         categoryType: catType,
         isFocusMode,
         cognitiveLoad,
-        tags: event.calendar?.name ? [event.calendar.name.toLowerCase()] : [],
+        tags: event.calendar?.cognitiveCategory ? [event.calendar.cognitiveCategory.toLowerCase()] : [],
       };
     });
 
@@ -96,12 +101,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const category = await prisma.calendarCategory.findUnique({
+    // Query CalendarConfig
+    const category = await prisma.calendarConfig.findFirst({
       where: { id: calendarId, userId: dbUser.id },
     });
 
     if (!category) {
-      return NextResponse.json({ error: "Invalid calendar category" }, { status: 400 });
+      return NextResponse.json({ error: "Kategori kalender tidak ditemukan." }, { status: 400 });
+    }
+
+    // Active/integrity validation during event creation:
+    // Reject event creation if CalendarConfig is inactive, soft-deleted, or has invalid mapping
+    if (!category.isActive) {
+      return NextResponse.json({ error: "Kategori kognitif yang dipilih sedang tidak aktif." }, { status: 400 });
+    }
+
+    if (category.deletedAt !== null) {
+      return NextResponse.json({ error: "Kategori kognitif yang dipilih telah dihapus." }, { status: 400 });
+    }
+
+    if (!category.googleCalendarId || category.googleCalendarId.trim() === "") {
+      return NextResponse.json({ error: "Kategori kognitif tidak memiliki pemetaan Google Calendar yang valid." }, { status: 400 });
     }
 
     // 1. Create event locally
@@ -119,12 +139,12 @@ export async function POST(request: Request) {
 
     let googleEventId: string | null = null;
     const hasGoogleAccount = dbUser.accounts.length > 0;
-    const isGoogleCalValid = category.googleCalId && !category.googleCalId.startsWith("local-");
+    const isGoogleCalValid = category.googleCalendarId && !category.googleCalendarId.startsWith("local-");
 
     // 2. Sync to Google Calendar if available
     if (hasGoogleAccount && isGoogleCalValid) {
       try {
-        googleEventId = await createGoogleEvent(dbUser.id, category.googleCalId, {
+        googleEventId = await createGoogleEvent(dbUser.id, category.googleCalendarId, {
           title,
           description,
           startTime,

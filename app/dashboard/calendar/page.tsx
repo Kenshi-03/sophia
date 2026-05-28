@@ -22,9 +22,9 @@ export default async function CalendarPage() {
     await seedDefaultCategoriesForUser(user.id)
 
     // Fetch categories
-    initialCategories = await prisma.calendarCategory.findMany({
-      where: { userId: user.id },
-      orderBy: { name: "asc" },
+    initialCategories = await prisma.calendarConfig.findMany({
+      where: { userId: user.id, deletedAt: null },
+      orderBy: { cognitiveCategory: "asc" },
     })
 
     // Fetch events with categories
@@ -35,7 +35,13 @@ export default async function CalendarPage() {
     })
 
     initialEvents = dbEvents.map((event) => {
-      const catType = event.calendar?.categoryType || ""
+      const rawType = event.calendar?.categoryType || "GENERAL"
+      
+      // Safe Fallback Rule: If linked config is soft-deleted or inactive, fallback type to GENERAL
+      const isConfigValid = event.calendar && event.calendar.isActive && !event.calendar.deletedAt
+      const resolvedType = isConfigValid ? rawType : "GENERAL"
+      const catType = resolvedType.toLowerCase().replace("_", "-")
+
       let cognitiveLoad = 35
       if (catType === "exam") cognitiveLoad = 80
       else if (catType === "deep-work") cognitiveLoad = 75
@@ -55,11 +61,11 @@ export default async function CalendarPage() {
         googleEventId: event.googleEventId,
         calendarId: event.calendarId,
         color: event.calendar?.color || "#8083ff",
-        categoryName: event.calendar?.name || "General",
+        categoryName: event.calendar?.cognitiveCategory || "General",
         categoryType: catType,
         isFocusMode,
         cognitiveLoad,
-        tags: event.calendar?.name ? [event.calendar.name.toLowerCase()] : [],
+        tags: event.calendar?.cognitiveCategory ? [event.calendar.cognitiveCategory.toLowerCase()] : [],
       }
     })
   } catch (error) {

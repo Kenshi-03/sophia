@@ -23,7 +23,7 @@ model User {
   tasks                Task[]
   events               Event[]
   settings             UserSettings?
-  categories           CalendarCategory[]
+  calendarConfigs      CalendarConfig[]
   aiUsages             AiUsage[]
   cognitiveProfile     CognitiveProfile?
   memoryRelations      MemoryRelation[]
@@ -130,7 +130,7 @@ model Event {
   googleEventId String?
 
   calendarId    String
-  calendar      CalendarCategory @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  calendar      CalendarConfig @relation(fields: [calendarId], references: [id], onDelete: Cascade)
 
   userId        String
   user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -172,29 +172,42 @@ model UserSettings {
   updatedAt              DateTime @updatedAt
 }
 
-model CalendarCategory {
-  id            String   @id @default(cuid())
+enum CognitiveCategoryType {
+  GENERAL
+  DEEP_WORK
+  MEETING
+  HEALTH
+  RECOVERY
+  ACADEMIC
+  PERSONAL
+  ADMIN
+  PROJECT
+}
 
-  name          String
-  description   String?
+model CalendarConfig {
+  id                 String                @id @default(cuid())
+  userId             String
 
-  color         String?
+  cognitiveCategory  String
+  categoryType       CognitiveCategoryType @default(GENERAL)
+  googleCalendarId   String
 
-  googleCalId   String   @unique
+  description        String?
+  color              String?
 
-  categoryType  String?
+  isDefault          Boolean @default(false)
+  isActive           Boolean @default(true)
+  isSeededDefault    Boolean @default(false)
+  deletedAt          DateTime?
 
-  isActive      Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  userId        String
-  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  events        Event[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events             Event[]
 
   @@index([userId])
+  @@index([userId, cognitiveCategory])
 }
 
 model AiUsage {

@@ -4,7 +4,7 @@ import { getValidGoogleClient } from "../google-client";
 import { createGoogleEvent } from "./create-event";
 
 /**
- * Synchronizes a user's calendar categories and events with Google Calendar.
+ * Synchronizes a user's calendar configurations and events with Google Calendar.
  * 1. Checks if Google Calendars exist for all categories; creates them if missing.
  * 2. Fetches events from Google for each category and updates/inserts/deletes locally.
  * 3. Finds local events not yet pushed to Google and inserts them.
@@ -14,23 +14,23 @@ export async function syncUserCalendar(userId: string) {
     const auth = await getValidGoogleClient(userId);
     const calendar = google.calendar({ version: "v3", auth });
 
-    // 1. Fetch user categories
-    const categories = await prisma.calendarCategory.findMany({
-      where: { userId },
+    // 1. Fetch user calendar configurations (active & non-deleted only)
+    const categories = await prisma.calendarConfig.findMany({
+      where: { userId, deletedAt: null, isActive: true },
     });
 
-    console.log(`Syncing ${categories.length} categories for user ${userId}`);
+    console.log(`Syncing ${categories.length} active configurations for user ${userId}`);
 
     // Time window for sync (e.g., 30 days back, 90 days forward)
     const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
     for (const category of categories) {
-      let googleCalId = category.googleCalId;
+      let googleCalId = category.googleCalendarId;
       let calendarExists = false;
 
       // 2. Validate calendar exists in Google
-      if (googleCalId && !googleCalId.startsWith("local-")) {
+      if (googleCalId && !googleCalId.startsWith("local-") && googleCalId !== "primary") {
         try {
           const calCheck = await calendar.calendars.get({ calendarId: googleCalId });
           if (calCheck.data.id) {
@@ -39,29 +39,31 @@ export async function syncUserCalendar(userId: string) {
         } catch (err) {
           console.warn(`Google Calendar ID ${googleCalId} not found, will recreate.`);
         }
+      } else if (googleCalId === "primary") {
+        calendarExists = true;
       }
 
-      // Recreate calendar if it doesn't exist on Google
-      if (!calendarExists) {
+      // Recreate calendar if it doesn't exist on Google (only if it wasn't set to "primary")
+      if (!calendarExists && googleCalId !== "primary") {
         try {
-          console.log(`Creating Google Calendar for category: ${category.name}`);
+          console.log(`Creating Google Calendar for category: ${category.cognitiveCategory}`);
           const newCal = await calendar.calendars.insert({
             requestBody: {
-              summary: `SOPHIA - ${category.name}`,
-              description: category.description || `Konteks produktivitas SOPHIA: ${category.name}`,
+              summary: `SOPHIA - ${category.cognitiveCategory}`,
+              description: category.description || `Konteks produktivitas SOPHIA: ${category.cognitiveCategory}`,
             },
           });
 
           if (newCal.data.id) {
             googleCalId = newCal.data.id;
-            await prisma.calendarCategory.update({
+            await prisma.calendarConfig.update({
               where: { id: category.id },
-              data: { googleCalId },
+              data: { googleCalendarId: googleCalId },
             });
             console.log(`Calendar created: ${newCal.data.id}`);
           }
         } catch (err) {
-          console.error(`Failed to create calendar for category ${category.name}:`, err);
+          console.error(`Failed to create calendar for category ${category.cognitiveCategory}:`, err);
           continue; // Skip sync for this category if calendar creation fails
         }
       }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import { CalendarEvent } from "@/types/calendar";
 import { revalidatePath } from "next/cache";
 import { invalidateUserCache } from "@/lib/redis";
+import { CognitiveCategoryType } from "@prisma/client";
 
 export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { id?: string }) {
   try {
@@ -14,15 +15,15 @@ export async function saveFocusBlockAction(event: Omit<CalendarEvent, "id"> & { 
     }
 
     // Find or seed a category for the user
-    let category = await prisma.calendarCategory.findFirst({
-      where: { userId: user.id, categoryType: "deep-work" },
+    let category = await prisma.calendarConfig.findFirst({
+      where: { userId: user.id, categoryType: CognitiveCategoryType.DEEP_WORK, deletedAt: null },
     });
 
     if (!category) {
       const { seedDefaultCategoriesForUser } = await import("@/lib/settings/category-seeding");
       await seedDefaultCategoriesForUser(user.id);
-      category = await prisma.calendarCategory.findFirst({
-        where: { userId: user.id, categoryType: "deep-work" },
+      category = await prisma.calendarConfig.findFirst({
+        where: { userId: user.id, categoryType: CognitiveCategoryType.DEEP_WORK, deletedAt: null },
       });
     }
 

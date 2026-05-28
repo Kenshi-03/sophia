@@ -1,11 +1,12 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Sliders, Key, Palette, ShieldAlert } from "lucide-react"
+import { Sliders, Key, Palette, ShieldAlert, Calendar } from "lucide-react"
 import GeneralSettings from "./general-settings"
 import GoogleSyncSettings from "./google-sync-settings"
 import ThemeSettings from "./theme-settings"
 import SystemStatus from "./system-status"
+import CalendarConfigSettings from "./calendar-config-settings"
 import { useSettingsStore } from "@/stores/use-settings-store"
 
 interface SettingsContainerProps {
@@ -15,7 +16,7 @@ interface SettingsContainerProps {
 }
 
 export default function SettingsContainer({ hasCredentials, memoryNodesCount, initialSettings }: SettingsContainerProps) {
-  const [activeTab, setActiveTab] = useState<"general" | "sync" | "theme" | "status">("general")
+  const [activeTab, setActiveTab] = useState<"general" | "sync" | "theme" | "status" | "calendarConfig">("general")
   const settingsStore = useSettingsStore()
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function SettingsContainer({ hasCredentials, memoryNodesCount, in
   const tabs = [
     { id: "general" as const, name: "General Config", icon: Sliders },
     { id: "sync" as const, name: "Google API Sync", icon: Key },
+    { id: "calendarConfig" as const, name: "Calendar Config", icon: Calendar },
     { id: "theme" as const, name: "Theme Accent Color", icon: Palette },
     { id: "status" as const, name: "System Status Health", icon: ShieldAlert },
   ]
@@ -79,6 +81,7 @@ export default function SettingsContainer({ hasCredentials, memoryNodesCount, in
       <div className="lg:col-span-2">
         {activeTab === "general" && <GeneralSettings />}
         {activeTab === "sync" && <GoogleSyncSettings hasCredentials={hasCredentials} />}
+        {activeTab === "calendarConfig" && <CalendarConfigSettings />}
         {activeTab === "theme" && <ThemeSettings />}
         {activeTab === "status" && <SystemStatus memoryNodesCount={memoryNodesCount} />}
       </div>

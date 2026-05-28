@@ -13,7 +13,7 @@ import { useSettingsStore } from "@/stores/use-settings-store"
 
 interface CalendarCategory {
   id: string
-  name: string
+  cognitiveCategory: string
   color: string | null
   categoryType: string | null
 }
@@ -138,7 +138,7 @@ export default function CalendarWorkspace({
     if (!recommendedFocus || categories.length === 0) return
 
     // Find the Deep Work category id to link
-    const deepWorkCategory = categories.find(c => c.categoryType === "deep-work") || categories[0]
+    const deepWorkCategory = categories.find(c => c.categoryType === "DEEP_WORK") || categories[0]
 
     try {
       const res = await fetch("/api/calendar", {

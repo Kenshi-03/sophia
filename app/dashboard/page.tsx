@@ -13,6 +13,14 @@ export default async function DashboardPage() {
   let events: CalendarEvent[] = []
   let memories: MemoryNode[] = []
 
+  let diagnostics = {
+    noConfigs: true,
+    seededOnly: false,
+    hasInactive: false,
+    hasInvalidMapping: false,
+    oauthDisconnected: true,
+  }
+
   try {
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
@@ -28,10 +36,26 @@ export default async function DashboardPage() {
           orderBy: { createdAt: "desc" },
           take: 2,
         },
+        calendarConfigs: {
+          where: { deletedAt: null },
+        },
+        accounts: {
+          where: { provider: "google" },
+        },
       },
     })
 
     if (dbUser) {
+      // Evaluate Diagnostics
+      const activeConfigs = dbUser.calendarConfigs
+      diagnostics = {
+        noConfigs: activeConfigs.length === 0,
+        seededOnly: activeConfigs.length > 0 && activeConfigs.every((c: any) => c.isSeededDefault),
+        hasInactive: activeConfigs.some((c: any) => !c.isActive),
+        hasInvalidMapping: activeConfigs.some((c: any) => !c.googleCalendarId || c.googleCalendarId.trim() === ""),
+        oauthDisconnected: dbUser.accounts.length === 0,
+      }
+
       tasks = dbUser.tasks.map((t: any) => ({
         ...t,
         createdAt: t.createdAt.toISOString(),
@@ -40,7 +64,12 @@ export default async function DashboardPage() {
       }))
       
       events = dbUser.events.map((e: any) => {
-        const catType = e.calendar?.categoryType || ""
+        const rawType = e.calendar?.categoryType || "GENERAL"
+        // Safe Fallback Rule: If linked config is soft-deleted or inactive, fallback to GENERAL
+        const isConfigValid = e.calendar && e.calendar.isActive && !e.calendar.deletedAt
+        const resolvedType = isConfigValid ? rawType : "GENERAL"
+        const catType = resolvedType.toLowerCase().replace("_", "-")
+
         let cognitiveLoad = 35
         if (catType === "exam") cognitiveLoad = 80
         else if (catType === "deep-work") cognitiveLoad = 75
@@ -60,11 +89,11 @@ export default async function DashboardPage() {
           googleEventId: e.googleEventId,
           calendarId: e.calendarId,
           color: e.calendar?.color || "#8083ff",
-          categoryName: e.calendar?.name || "General",
+          categoryName: e.calendar?.cognitiveCategory || "General",
           categoryType: catType,
           isFocusMode,
           cognitiveLoad,
-          tags: e.calendar?.name ? [e.calendar.name.toLowerCase()] : [],
+          tags: e.calendar?.cognitiveCategory ? [e.calendar.cognitiveCategory.toLowerCase()] : [],
         }
       })
 
@@ -133,6 +162,7 @@ export default async function DashboardPage() {
       mockAgents={mockAgents}
       events={events}
       memories={memories}
+      diagnostics={diagnostics}
     />
   )
 }

@@ -54,16 +54,23 @@ export async function buildCognitiveContext(
 
   const settings = await getSettings(userId)
 
-  // 2. Fetch User Categories
-  const categories = await prisma.calendarCategory.findMany({
-    where: { userId },
+  // 2. Fetch User Configurations
+  const dbCategories = await prisma.calendarConfig.findMany({
+    where: { userId, deletedAt: null },
     select: {
       id: true,
-      name: true,
+      cognitiveCategory: true,
       categoryType: true,
       color: true,
     },
   })
+
+  const categories = dbCategories.map(c => ({
+    id: c.id,
+    name: c.cognitiveCategory,
+    categoryType: c.categoryType,
+    color: c.color,
+  }))
 
   // 3. Fetch Events Scheduled for the Target Date
   const startOfDay = new Date(targetDate)
@@ -88,18 +95,29 @@ export async function buildCognitiveContext(
     },
   })
 
-  // 4. Map & Format Raw Event Details
+  // 4. Map & Format Raw Event Details with Safe Fallbacks
   const events = dbEvents.map((e) => {
     const durationMinutes = Math.round(
       (e.endTime.getTime() - e.startTime.getTime()) / 60000
     )
+
+    const rawType = e.calendar?.categoryType || "GENERAL"
+    // Safe Fallback Rule: If linked config is soft-deleted or inactive, fallback type to GENERAL
+    const isConfigValid = e.calendar && e.calendar.isActive && !e.calendar.deletedAt
+    const resolvedType = isConfigValid ? rawType : "GENERAL"
+    const catType = resolvedType.toLowerCase().replace("_", "-")
+
+    if (e.calendar && (!e.calendar.isActive || e.calendar.deletedAt)) {
+      console.warn(`[Cognitive Diagnostics Alert] Event "${e.title}" (id: ${e.id}) references an inactive or deleted calendar configuration. Falling back semantic classification to GENERAL.`);
+    }
+
     return {
       id: e.id,
       title: e.title,
       startTime: e.startTime.toISOString(),
       endTime: e.endTime.toISOString(),
-      categoryName: e.calendar?.name || "General",
-      categoryType: e.calendar?.categoryType || "general",
+      categoryName: e.calendar?.cognitiveCategory || "General",
+      categoryType: catType,
       durationMinutes,
     }
   })
@@ -215,7 +233,10 @@ export async function buildCognitiveContext(
   let maxConsecutiveFocus = 0
   for (let i = 0; i < dbEvents.length; i++) {
     const e = dbEvents[i]
-    const type = e.calendar?.categoryType || "general"
+    const rawType = e.calendar?.categoryType || "GENERAL"
+    const isConfigValid = e.calendar && e.calendar.isActive && !e.calendar.deletedAt
+    const resolvedType = isConfigValid ? rawType : "GENERAL"
+    const type = resolvedType.toLowerCase().replace("_", "-")
     const duration = Math.round((e.endTime.getTime() - e.startTime.getTime()) / 60000)
 
     if (type === "deep-work" || type === "academic" || type === "exam") {

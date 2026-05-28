@@ -1,7 +1,8 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Eye, EyeOff, Sparkles, CheckCircle2 } from "lucide-react"
+import Link from "next/link"
+import { Eye, EyeOff, Sparkles, CheckCircle2, AlertCircle, Calendar } from "lucide-react"
 import CurrentFocusCard from "./current-focus-card"
 import ActiveAgentsWidget from "./active-agents-widget"
 import IntegratedScheduleWidget from "./integrated-schedule-widget"
@@ -17,6 +18,13 @@ interface DashboardGridProps {
   mockAgents: any[]
   events: any[]
   memories: any[]
+  diagnostics?: {
+    noConfigs: boolean
+    seededOnly: boolean
+    hasInactive: boolean
+    hasInvalidMapping: boolean
+    oauthDisconnected: boolean
+  }
 }
 
 export default function DashboardGrid({
@@ -27,6 +35,7 @@ export default function DashboardGrid({
   mockAgents,
   events,
   memories,
+  diagnostics,
 }: DashboardGridProps) {
   const [focusMode, setFocusMode] = useState(false)
   const [metrics, setMetrics] = useState<any>(null)
@@ -116,6 +125,91 @@ export default function DashboardGrid({
           <span>{focusMode ? "Keluar Focus Mode" : "Focus Mode"}</span>
         </button>
       </div>
+
+      {/* Diagnostics Alert Banners */}
+      {!focusMode && diagnostics && (
+        <div className="space-y-3">
+          {diagnostics.oauthDisconnected && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-amber-500/[0.04] border border-amber-500/20 text-[#ffe082] hover:border-amber-500/30 transition-all duration-300">
+              <div className="flex gap-3">
+                <AlertCircle className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                <div>
+                  <h4 className="text-xs font-bold font-display text-white">Koneksi Google Calendar Terputus</h4>
+                  <p className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
+                    SOPHIA saat ini berjalan dalam mode memori lokal. Otorisasikan akun Google Anda di Settings untuk sinkronisasi kalender kognitif otomatis.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/settings"
+                className="bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 hover:text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all shrink-0 cursor-pointer text-center whitespace-nowrap self-stretch sm:self-auto"
+              >
+                Hubungkan OAuth
+              </Link>
+            </div>
+          )}
+
+          {!diagnostics.oauthDisconnected && diagnostics.noConfigs && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-red-500/[0.04] border border-red-500/20 text-[#ffb4ab] hover:border-red-500/30 transition-all duration-300">
+              <div className="flex gap-3">
+                <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={16} />
+                <div>
+                  <h4 className="text-xs font-bold font-display text-white">Kategori Kognitif Kosong</h4>
+                  <p className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
+                    SOPHIA memerlukan setidaknya satu kategori kognitif aktif untuk memetakan beban kognitif jadwal Anda.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/settings"
+                className="bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 hover:text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all shrink-0 cursor-pointer text-center whitespace-nowrap self-stretch sm:self-auto"
+              >
+                Konfigurasi Kalender
+              </Link>
+            </div>
+          )}
+
+          {!diagnostics.oauthDisconnected && !diagnostics.noConfigs && diagnostics.seededOnly && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#adc6ff]/5 border border-[#adc6ff]/20 text-[#adc6ff] hover:border-[#adc6ff]/30 transition-all duration-300">
+              <div className="flex gap-3">
+                <Calendar className="text-[#adc6ff] shrink-0 mt-0.5" size={16} />
+                <div>
+                  <h4 className="text-xs font-bold font-display text-white">Menggunakan Kategori Default</h4>
+                  <p className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
+                    SOPHIA berjalan menggunakan kategori kognitif default. Anda dapat memetakan ID Google Calendar khusus di Settings.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/settings"
+                className="bg-[#adc6ff]/15 border border-[#adc6ff]/25 text-[#adc6ff] hover:bg-[#adc6ff]/25 hover:text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all shrink-0 cursor-pointer text-center whitespace-nowrap self-stretch sm:self-auto"
+              >
+                Buka Calendar Config
+              </Link>
+            </div>
+          )}
+
+          {!diagnostics.oauthDisconnected && !diagnostics.noConfigs && !diagnostics.seededOnly && (diagnostics.hasInactive || diagnostics.hasInvalidMapping) && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-amber-500/[0.04] border border-amber-500/20 text-[#ffe082] hover:border-amber-500/30 transition-all duration-300">
+              <div className="flex gap-3">
+                <AlertCircle className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                <div>
+                  <h4 className="text-xs font-bold font-display text-white">Konfigurasi Kalender Memerlukan Tindakan</h4>
+                  <p className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
+                    Beberapa kategori kognitif dinonaktifkan atau memiliki ID Google Calendar yang tidak valid. Perbaiki konfigurasi Anda untuk sinkronisasi optimal.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/settings"
+                className="bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 hover:text-white px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all shrink-0 cursor-pointer text-center whitespace-nowrap self-stretch sm:self-auto"
+              >
+                Perbaiki Konfigurasi
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Minimized / Translucent Briefing Widget in Focus Mode */}
       <div className={`transition-all duration-500 ${

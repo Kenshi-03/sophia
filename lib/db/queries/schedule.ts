@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { CalendarEvent } from "@/types/calendar";
 import { seedDefaultCategoriesForUser } from "@/lib/settings/category-seeding";
+import { CognitiveCategoryType } from "@prisma/client";
 
 export async function getUserSchedule(userId: string): Promise<CalendarEvent[]> {
   // Ensure default categories are seeded
@@ -13,7 +14,12 @@ export async function getUserSchedule(userId: string): Promise<CalendarEvent[]> 
   });
 
   return dbEvents.map((event) => {
-    const catType = event.calendar?.categoryType || "";
+    const rawType = event.calendar?.categoryType || "GENERAL";
+    
+    // Safe Fallback Rule: If linked config is soft-deleted or inactive, fallback type to GENERAL
+    const isConfigValid = event.calendar && event.calendar.isActive && !event.calendar.deletedAt;
+    const resolvedType = isConfigValid ? rawType : "GENERAL";
+    const catType = resolvedType.toLowerCase().replace("_", "-");
     
     // Cognitive load calculations
     let cognitiveLoad = 35;
@@ -35,11 +41,11 @@ export async function getUserSchedule(userId: string): Promise<CalendarEvent[]> 
       googleEventId: event.googleEventId,
       calendarId: event.calendarId,
       color: event.calendar?.color || "#8083ff",
-      categoryName: event.calendar?.name || "General",
+      categoryName: event.calendar?.cognitiveCategory || "General",
       categoryType: catType,
       isFocusMode,
       cognitiveLoad,
-      tags: event.calendar?.name ? [event.calendar.name.toLowerCase()] : [],
+      tags: event.calendar?.cognitiveCategory ? [event.calendar.cognitiveCategory.toLowerCase()] : [],
     };
   });
 }
@@ -49,21 +55,21 @@ export async function upsertUserSchedule(userId: string, events: CalendarEvent[]
   await seedDefaultCategoriesForUser(userId);
 
   // Retrieve seeded categories to map by name or type
-  const userCategories = await prisma.calendarCategory.findMany({
-    where: { userId },
+  const userCategories = await prisma.calendarConfig.findMany({
+    where: { userId, deletedAt: null },
   });
 
   // Find a fallback category or mapping
-  const defaultCategory = userCategories[0];
+  const defaultCategory = userCategories.find((c) => c.isDefault) || userCategories[0];
 
   const operations = events.map((event) => {
     const startTime = new Date(event.startTime);
     const endTime = new Date(event.endTime);
 
-    // Try to find matching category by name or use the first one
+    // Try to find matching category by name or use the default one
     const categoryName = (event as any).categoryName || "";
     const matchedCategory = userCategories.find(
-      (c) => c.name.toLowerCase() === categoryName.toLowerCase()
+      (c) => c.cognitiveCategory.toLowerCase() === categoryName.toLowerCase()
     ) || defaultCategory;
 
     return prisma.event.upsert({

@@ -13,7 +13,7 @@ import {
 
 interface CalendarCategory {
   id: string;
-  name: string;
+  cognitiveCategory: string;
   color: string | null;
   categoryType: string | null;
 }
@@ -324,7 +324,7 @@ export default function EventEditor({
                       className="h-2.5 w-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: catColor }}
                     />
-                    <span className="truncate">{cat.name}</span>
+                    <span className="truncate">{cat.cognitiveCategory}</span>
                   </button>
                 )
               })}
