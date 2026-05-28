@@ -8,6 +8,7 @@ import {
   Brain,
   Database,
   Notebook,
+  GraduationCap,
 } from "lucide-react"
 
 const bottomMenuItems = [
@@ -20,6 +21,11 @@ const bottomMenuItems = [
     title: "Calendar",
     href: "/dashboard/calendar",
     icon: Calendar,
+  },
+  {
+    title: "Classes",
+    href: "/dashboard/class-planner",
+    icon: GraduationCap,
   },
   {
     title: "AI Command",

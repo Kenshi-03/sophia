@@ -36,6 +36,10 @@ export interface CognitiveContext {
     categoryName: string
     categoryType: string
     durationMinutes: number
+    courseSession?: {
+      sessionType: string
+      sessionMode: string
+    } | null
   }[]
 }
 
@@ -89,6 +93,7 @@ export async function buildCognitiveContext(
     },
     include: {
       calendar: true,
+      courseSession: true,
     },
     orderBy: {
       startTime: "asc",
@@ -119,6 +124,10 @@ export async function buildCognitiveContext(
       categoryName: e.calendar?.cognitiveCategory || "General",
       categoryType: catType,
       durationMinutes,
+      courseSession: e.courseSession ? {
+        sessionType: e.courseSession.sessionType,
+        sessionMode: e.courseSession.sessionMode,
+      } : null,
     }
   })
 
@@ -133,7 +142,10 @@ export async function buildCognitiveContext(
     const titleLower = e.title.toLowerCase()
     
     // Focus activities: deep-work, academic, exams
-    if (type === "deep-work" || type === "academic" || type === "exam") {
+    // Academic Course Sessions (except HOLIDAY) are focus activities
+    const isAcademicFocus = e.courseSession && e.courseSession.sessionType !== "HOLIDAY";
+    
+    if (isAcademicFocus || type === "deep-work" || type === "academic" || type === "exam") {
       focusMinutes += e.durationMinutes
     } else if (titleLower.includes("focus") || titleLower.includes("deep") || titleLower.includes("belajar") || titleLower.includes("kuliah")) {
       focusMinutes += e.durationMinutes
@@ -146,10 +158,15 @@ export async function buildCognitiveContext(
       recoveryMinutes += e.durationMinutes
     }
 
-    if (type === "exam" || titleLower.includes("ujian") || titleLower.includes("evaluasi") || titleLower.includes("test")) {
+    // Exam Counting (including CourseSession MID_EXAM and FINAL_EXAM)
+    const isAcademicExam = e.courseSession && (e.courseSession.sessionType === "MID_EXAM" || e.courseSession.sessionType === "FINAL_EXAM");
+    if (isAcademicExam || type === "exam" || titleLower.includes("ujian") || titleLower.includes("evaluasi") || titleLower.includes("test") || titleLower.includes("uts") || titleLower.includes("uas")) {
       examCount++
     }
-    if (type === "deadline" || titleLower.includes("deadline") || titleLower.includes("tugas")) {
+
+    // Deadline/Quiz/Presentation Counting
+    const isAcademicDeadline = e.courseSession && (e.courseSession.sessionType === "QUIZ" || e.courseSession.sessionType === "PRESENTATION");
+    if (isAcademicDeadline || type === "deadline" || titleLower.includes("deadline") || titleLower.includes("tugas")) {
       deadlineCount++
     }
   })

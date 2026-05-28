@@ -43,6 +43,14 @@ export const COGNITIVE_CATEGORIES: SeededCategory[] = [
     description: "Aktivitas pribadi, sosial, dan istirahat santai.",
     isDefault: false,
   },
+  {
+    cognitiveCategory: "Academics",
+    color: "#0D9488",
+    categoryType: CognitiveCategoryType.ACADEMIC,
+    googleCalendarId: "primary",
+    description: "Kegiatan akademis, perkuliahan, praktikum, dan ujian.",
+    isDefault: false,
+  },
 ];
 
 /**
@@ -82,5 +90,36 @@ export async function seedDefaultCategoriesForUser(userId: string) {
   } catch (error) {
     console.error(`Failed to seed calendar configs for user ${userId}:`, error);
     return { success: false, seeded: false, error };
+  }
+}
+
+export async function getOrCreateAcademicConfig(userId: string) {
+  try {
+    // 1. Look for an existing, non-deleted config of type ACADEMIC
+    let config = await prisma.calendarConfig.findFirst({
+      where: { userId, categoryType: CognitiveCategoryType.ACADEMIC, deletedAt: null },
+    });
+
+    if (!config) {
+      // 2. If it doesn't exist, create it
+      config = await prisma.calendarConfig.create({
+        data: {
+          userId,
+          cognitiveCategory: "Academics",
+          color: "#0D9488",
+          categoryType: CognitiveCategoryType.ACADEMIC,
+          googleCalendarId: "primary",
+          description: "Kegiatan akademis, perkuliahan, praktikum, dan ujian.",
+          isDefault: false,
+          isActive: true,
+          isSeededDefault: true,
+        },
+      });
+    }
+
+    return config;
+  } catch (error) {
+    console.error(`Failed to get or create ACADEMIC calendar config for user ${userId}:`, error);
+    throw error;
   }
 }

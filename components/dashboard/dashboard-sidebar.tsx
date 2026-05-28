@@ -14,6 +14,7 @@ import {
   Terminal,
   X,
   Sparkles,
+  GraduationCap,
 } from "lucide-react"
 import { createThoughtAction } from "@/app/actions/thoughts"
 
@@ -27,6 +28,11 @@ const menuItems = [
     title: "Calendar",
     href: "/dashboard/calendar",
     icon: Calendar,
+  },
+  {
+    title: "Class Planner",
+    href: "/dashboard/class-planner",
+    icon: GraduationCap,
   },
   {
     title: "AI Command",

@@ -1,0 +1,1257 @@
+"use client"
+
+import React, { useState, useEffect } from "react";
+import { 
+  Plus, 
+  GraduationCap, 
+  MapPin, 
+  Link as LinkIcon, 
+  Clock, 
+  AlertTriangle, 
+  ChevronRight, 
+  History, 
+  Calendar as CalendarIcon, 
+  Edit3, 
+  XCircle, 
+  CheckCircle2, 
+  RefreshCw, 
+  ArrowRight,
+  BookOpen,
+  User,
+  Info
+} from "lucide-react";
+
+interface CourseSession {
+  id: string;
+  courseId: string;
+  sequenceNumber: number;
+  sessionType: string;
+  plannedDate: string;
+  actualDate?: string | null;
+  startTime: string;
+  endTime: string;
+  status: string;
+  sessionMode: string;
+  room?: string | null;
+  meetingLink?: string | null;
+  notes?: string | null;
+}
+
+interface TimelineMutationLog {
+  id: string;
+  courseId: string;
+  courseSessionId?: string | null;
+  mutationType: string;
+  affectedSequences: number[];
+  previousState?: any;
+  newState?: any;
+  reason?: string | null;
+  createdAt: string;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  lecturer: string;
+  semester: number;
+  academicYear: string;
+  totalSessions: number;
+  categoryType: string;
+  defaultSessionMode: string;
+  defaultLocation?: string | null;
+  defaultMeetingLink?: string | null;
+  timelineVersion: number;
+  sessions: CourseSession[];
+  mutationLogs: TimelineMutationLog[];
+}
+
+interface Collision {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  location?: string | null;
+  type: string;
+  courseTitle?: string;
+  sequenceNumber?: number;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+}
+
+export default function ClassPlannerPage() {
+  // State variables
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Modals state
+  const [showAddCourse, setShowAddCourse] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+
+  // Active items for modals
+  const [activeSession, setActiveSession] = useState<CourseSession | null>(null);
+
+  // Add Course Form State
+  const [courseForm, setCourseForm] = useState({
+    title: "",
+    lecturer: "",
+    semester: 1,
+    academicYear: new Date().getFullYear() + "/" + (new Date().getFullYear() + 1),
+    totalSessions: 16,
+    defaultSessionMode: "OFFLINE",
+    defaultLocation: "",
+    defaultMeetingLink: "",
+    firstSessionDate: new Date().toISOString().split("T")[0],
+    startTime: "08:00",
+    endTime: "09:40",
+  });
+
+  // Override Form State
+  const [overrideForm, setOverrideForm] = useState({
+    plannedDate: "",
+    startTime: "",
+    endTime: "",
+    room: "",
+    meetingLink: "",
+    sessionMode: "OFFLINE",
+    sessionType: "CLASS",
+    notes: "",
+  });
+
+  // Collision state
+  const [collisions, setCollisions] = useState<Collision[]>([]);
+  const [checkingCollisions, setCheckingCollisions] = useState(false);
+
+  // Cancellation/Shift Form State
+  const [cancelForm, setCancelForm] = useState({
+    action: "SKIP", // SKIP, RESCHEDULE, SHIFT
+    newDate: new Date().toISOString().split("T")[0],
+    startTime: "08:00",
+    endTime: "09:40",
+    daysToShift: 7,
+    bypassCooldown: false,
+    reason: "",
+  });
+
+  const [cooldownWarning, setCooldownWarning] = useState("");
+
+  // Fetch Courses
+  const fetchCourses = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await fetch("/api/academic/courses");
+      const data = await res.json();
+      if (data.success) {
+        setCourses(data.courses);
+        // Sync selected course if active
+        if (selectedCourse) {
+          const updated = data.courses.find((c: Course) => c.id === selectedCourse.id);
+          if (updated) {
+            setSelectedCourse(updated);
+          } else {
+            setSelectedCourse(null);
+          }
+        }
+      } else {
+        setError(data.error || "Gagal mengambil daftar perkuliahan.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan koneksi saat mengambil data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  // Fetch individual course details (including logs)
+  const selectCourse = async (courseId: string) => {
+    try {
+      setError("");
+      const res = await fetch(`/api/academic/courses/${courseId}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedCourse(data.course);
+      } else {
+        setError(data.error || "Gagal mengambil detail perkuliahan.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan koneksi saat mengambil detail kelas.");
+    }
+  };
+
+  // Add Course Submit
+  const handleAddCourseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setError("");
+      const res = await fetch("/api/academic/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(courseForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowAddCourse(false);
+        // Reset form
+        setCourseForm({
+          title: "",
+          lecturer: "",
+          semester: 1,
+          academicYear: new Date().getFullYear() + "/" + (new Date().getFullYear() + 1),
+          totalSessions: 16,
+          defaultSessionMode: "OFFLINE",
+          defaultLocation: "",
+          defaultMeetingLink: "",
+          firstSessionDate: new Date().toISOString().split("T")[0],
+          startTime: "08:00",
+          endTime: "09:40",
+        });
+        await fetchCourses();
+      } else {
+        setError(data.error || "Gagal menyimpan jadwal perkuliahan.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan menyimpan jadwal.");
+    }
+  };
+
+  // Open Override Modal
+  const openOverrideModal = (session: CourseSession) => {
+    setActiveSession(session);
+    setOverrideForm({
+      plannedDate: session.plannedDate.split("T")[0],
+      startTime: session.startTime,
+      endTime: session.endTime,
+      room: session.room || "",
+      meetingLink: session.meetingLink || "",
+      sessionMode: session.sessionMode,
+      sessionType: session.sessionType,
+      notes: session.notes || "",
+    });
+    setCollisions([]);
+    setShowOverride(true);
+  };
+
+  // Live Collision Check for Override Form
+  useEffect(() => {
+    if (!showOverride || !activeSession) return;
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        setCheckingCollisions(true);
+        const res = await fetch("/api/academic/collisions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plannedDate: overrideForm.plannedDate,
+            startTime: overrideForm.startTime,
+            endTime: overrideForm.endTime,
+            room: overrideForm.room,
+            excludeEventId: null // We check conflict globally
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setCollisions(data.conflicts);
+        }
+      } catch (err) {
+        console.error("Collision check failed:", err);
+      } finally {
+        setCheckingCollisions(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [
+    overrideForm.plannedDate,
+    overrideForm.startTime,
+    overrideForm.endTime,
+    overrideForm.room,
+    showOverride,
+    activeSession
+  ]);
+
+  // Override Submit
+  const handleOverrideSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      setError("");
+      const res = await fetch(`/api/academic/sessions/${activeSession.id}/override`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(overrideForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowOverride(false);
+        if (selectedCourse) {
+          await selectCourse(selectedCourse.id);
+        }
+        await fetchCourses();
+      } else {
+        setError(data.error || "Gagal mengubah detail sesi.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan memodifikasi sesi.");
+    }
+  };
+
+  // Open Cancel/Shift Modal
+  const openCancelModal = (session: CourseSession) => {
+    setActiveSession(session);
+    setCancelForm({
+      action: "SKIP",
+      newDate: session.plannedDate.split("T")[0],
+      startTime: session.startTime,
+      endTime: session.endTime,
+      daysToShift: 7,
+      bypassCooldown: false,
+      reason: "",
+    });
+    setCooldownWarning("");
+    setShowCancel(true);
+  };
+
+  // Cancel/Shift Submit
+  const handleCancelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      setError("");
+      setCooldownWarning("");
+      const res = await fetch(`/api/academic/sessions/${activeSession.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cancelForm),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setShowCancel(false);
+        if (selectedCourse) {
+          await selectCourse(selectedCourse.id);
+        }
+        await fetchCourses();
+      } else {
+        if (data.error === "COOLDOWN_ACTIVE") {
+          setCooldownWarning(data.message);
+        } else {
+          setError(data.error || "Gagal melakukan aksi pembatalan.");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan memproses pembatalan.");
+    }
+  };
+
+  // Delete Course
+  const handleDeleteCourse = async (courseId: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus perkuliahan ini beserta seluruh sesinya? Tindakan ini tidak dapat dibatalkan secara langsung.")) return;
+
+    try {
+      setError("");
+      const res = await fetch(`/api/academic/courses/${courseId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedCourse(null);
+        await fetchCourses();
+      } else {
+        setError(data.error || "Gagal menghapus perkuliahan.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan menghapus kelas.");
+    }
+  };
+
+  // Calculate Progress Stats
+  const getProgress = (course: Course) => {
+    const completed = course.sessions.filter((s) => s.status === "COMPLETED" || s.status === "SKIPPED").length;
+    const percentage = Math.round((completed / course.totalSessions) * 100);
+    return { completed, total: course.totalSessions, percentage };
+  };
+
+  return (
+    <div className="space-y-6 pb-12">
+      {/* Header Panel */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <GraduationCap className="text-[#8083ff]" size={24} />
+            <h1 className="text-2xl font-bold tracking-tight text-white font-sans">Class Planner</h1>
+          </div>
+          <p className="text-xs text-[#c7c4d7] mt-1 font-mono">
+            Academic Schedule System — Semester Timeline & Cognitive Load Engine
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddCourse(true)}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#8083ff] text-white hover:bg-[#8083ff]/90 transition-all cursor-pointer shadow-lg shadow-[#8083ff]/15 active:scale-98"
+        >
+          <Plus size={16} />
+          <span>New Course</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 rounded-2xl text-xs text-[#ffb4ab] flex gap-2 items-start">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Main Workspace split */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Left Side: Courses list */}
+        <div className="lg:col-span-1 space-y-4">
+          <div className="glass-panel p-4 rounded-3xl border border-white/5 bg-[#17191d]/60 space-y-4">
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <BookOpen size={16} className="text-[#8083ff]" />
+              <h2 className="font-bold text-xs uppercase tracking-wider text-[#c7c4d7]">Active Courses</h2>
+            </div>
+
+            {loading && courses.length === 0 ? (
+              <div className="text-center py-8 text-xs text-[#c7c4d7]/50 font-mono">Loading courses...</div>
+            ) : courses.length === 0 ? (
+              <div className="text-center py-8 text-xs text-[#c7c4d7]/50 font-mono">Belum ada kelas terdaftar.</div>
+            ) : (
+              <div className="space-y-2">
+                {courses.map((course) => {
+                  const { completed, total, percentage } = getProgress(course);
+                  const isSelected = selectedCourse?.id === course.id;
+                  return (
+                    <div
+                      key={course.id}
+                      onClick={() => selectCourse(course.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer text-left ${
+                        isSelected 
+                          ? "bg-[#c0c1ff]/10 border-[#8083ff]" 
+                          : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <h3 className="font-bold text-sm text-white leading-snug">{course.title}</h3>
+                        <span className="text-[10px] font-mono bg-[#8083ff]/10 text-[#8083ff] px-2 py-0.5 rounded-full shrink-0">
+                          v{course.timelineVersion}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#c7c4d7]/70 mt-1 flex items-center gap-1">
+                        <User size={12} className="shrink-0" /> {course.lecturer}
+                      </p>
+                      <p className="text-[10px] text-[#c7c4d7]/50 mt-0.5 font-mono">
+                        Semester {course.semester} • T.A {course.academicYear}
+                      </p>
+                      
+                      {/* Mini progress bar */}
+                      <div className="mt-4 space-y-1">
+                        <div className="flex justify-between text-[9px] font-mono text-[#c7c4d7]/60">
+                          <span>Progress</span>
+                          <span>{completed}/{total} ({percentage}%)</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-[#8083ff] to-[#0d9488] rounded-full transition-all duration-500" 
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Course Details & Timeline */}
+        <div className="lg:col-span-2 space-y-6">
+          {!selectedCourse ? (
+            <div className="glass-panel p-12 rounded-3xl border border-white/5 bg-[#17191d]/30 text-center space-y-3">
+              <GraduationCap className="mx-auto text-[#c7c4d7]/30" size={48} />
+              <h3 className="font-bold text-sm text-white">No Course Selected</h3>
+              <p className="text-xs text-[#c7c4d7]/60 max-w-sm mx-auto">
+                Pilih mata kuliah di sebelah kiri atau buat kelas baru untuk mulai merancang timeline akademis semester Anda.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Course Detail Card */}
+              <div className="glass-panel p-6 rounded-3xl border border-white/5 bg-[#17191d]/80 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+                  <div>
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-[#8083ff] bg-[#8083ff]/10 px-2 py-0.5 rounded-md">
+                      Academic Category
+                    </span>
+                    <h2 className="text-xl font-bold text-white mt-1.5">{selectedCourse.title}</h2>
+                    <p className="text-xs text-[#c7c4d7] mt-0.5">
+                      Dosen Pengampu: <span className="text-white font-medium">{selectedCourse.lecturer}</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCourse(selectedCourse.id)}
+                    className="self-start sm:self-center px-3 py-1.5 border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 text-[11px] font-semibold text-[#ffb4ab] rounded-xl hover:bg-[#ffb4ab]/10 transition-all cursor-pointer"
+                  >
+                    Delete Course
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                  <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-[#c7c4d7]/60 font-mono">Academic Year</p>
+                    <p className="font-semibold text-white mt-0.5">{selectedCourse.academicYear}</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-[#c7c4d7]/60 font-mono">Semester</p>
+                    <p className="font-semibold text-white mt-0.5">{selectedCourse.semester}</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-[#c7c4d7]/60 font-mono">Default Mode</p>
+                    <p className="font-semibold text-white mt-0.5">{selectedCourse.defaultSessionMode}</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-[#c7c4d7]/60 font-mono">Timeline Version</p>
+                    <p className="font-semibold text-white mt-0.5">v{selectedCourse.timelineVersion}</p>
+                  </div>
+                </div>
+
+                {/* Big progress metrics */}
+                <div className="p-4 bg-gradient-to-br from-[#8083ff]/10 to-[#0d9488]/10 rounded-2xl border border-white/5 space-y-2">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <span className="text-[#c7c4d7]">Semester Timeline Progression</span>
+                    <span className="font-bold text-white">
+                      {getProgress(selectedCourse).completed}/{getProgress(selectedCourse).total} Sessions Complete ({getProgress(selectedCourse).percentage}%)
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-[#8083ff] to-[#0d9488] rounded-full transition-all duration-500" 
+                      style={{ width: `${getProgress(selectedCourse).percentage}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline Sequence list */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 px-1">
+                  <CalendarIcon size={16} className="text-[#8083ff]" />
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-[#c7c4d7]">Semester Sequence Timeline</h3>
+                </div>
+
+                <div className="space-y-3 relative before:absolute before:top-2 before:bottom-2 before:left-6 before:w-0.5 before:bg-white/5">
+                  {selectedCourse.sessions.map((session, index) => {
+                    const isSkipped = session.status === "SKIPPED";
+                    const isRescheduled = session.status === "RESCHEDULED";
+                    const isCompleted = session.status === "COMPLETED";
+
+                    // Session type styling
+                    let typeColor = "bg-[#8083ff]/10 text-[#8083ff] border-[#8083ff]/20";
+                    if (session.sessionType === "MID_EXAM" || session.sessionType === "FINAL_EXAM") {
+                      typeColor = "bg-[#ffb4ab]/10 text-[#ffb4ab] border-[#ffb4ab]/20 font-bold";
+                    } else if (session.sessionType === "QUIZ" || session.sessionType === "PRESENTATION") {
+                      typeColor = "bg-[#f97316]/10 text-[#f97316] border-[#f97316]/20";
+                    } else if (session.sessionType === "LAB") {
+                      typeColor = "bg-[#0d9488]/10 text-[#0d9488] border-[#0d9488]/20";
+                    }
+
+                    // Mode badging
+                    let modeColor = "bg-white/5 text-[#c7c4d7]";
+                    if (session.sessionMode === "ONLINE") modeColor = "bg-[#06b6d4]/10 text-[#06b6d4] border-[#06b6d4]/20";
+                    else if (session.sessionMode === "OFFLINE") modeColor = "bg-[#f59e0b]/10 text-[#f59e0b] border-[#f59e0b]/20";
+                    else if (session.sessionMode === "HYBRID") modeColor = "bg-[#ec4899]/10 text-[#ec4899] border-[#ec4899]/20";
+
+                    return (
+                      <div 
+                        key={session.id} 
+                        className={`flex gap-4 relative group items-start transition-all duration-300 ${
+                          isSkipped ? "opacity-50" : ""
+                        }`}
+                      >
+                        {/* Left sequence circle */}
+                        <div className={`h-12 w-12 rounded-full border flex items-center justify-center text-xs font-mono font-bold shrink-0 z-10 transition-colors ${
+                          isSkipped 
+                            ? "bg-[#111316] border-white/5 text-[#c7c4d7]/40" 
+                            : isCompleted 
+                              ? "bg-[#0d9488]/20 border-[#0d9488] text-[#0d9488]"
+                              : isRescheduled
+                                ? "bg-[#f97316]/20 border-[#f97316] text-[#f97316]"
+                                : "bg-[#17191d] border-white/10 text-white"
+                        }`}>
+                          {session.sequenceNumber}
+                        </div>
+
+                        {/* Session details block */}
+                        <div className="flex-1 glass-panel p-4 rounded-2xl border border-white/5 bg-[#17191d]/60 hover:bg-[#17191d]/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="space-y-2">
+                            {/* Line 1: Date and status indicators */}
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-bold text-white font-mono">
+                                {new Date(session.plannedDate).toLocaleDateString("id-ID", {
+                                  weekday: "long",
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric"
+                                })}
+                              </span>
+                              <span className="text-[#c7c4d7]/50">•</span>
+                              <span className="flex items-center gap-1 text-[11px] text-[#c7c4d7]/70">
+                                <Clock size={12} /> {session.startTime} - {session.endTime}
+                              </span>
+
+                              {/* Status badge */}
+                              {isSkipped && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffb4ab] border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 px-2 py-0.5 rounded-full">
+                                  Skipped
+                                </span>
+                              )}
+                              {isRescheduled && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316] border border-[#f97316]/20 bg-[#f97316]/5 px-2 py-0.5 rounded-full">
+                                  Override
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#0d9488] border border-[#0d9488]/20 bg-[#0d9488]/5 px-2 py-0.5 rounded-full">
+                                  Complete
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Line 2: Badges & location details */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Session Type */}
+                              <span className={`text-[10px] uppercase font-mono px-2.5 py-0.5 rounded-md border ${typeColor}`}>
+                                {session.sessionType}
+                              </span>
+                              {/* Session Mode */}
+                              <span className={`text-[10px] uppercase font-mono px-2.5 py-0.5 rounded-md border ${modeColor}`}>
+                                {session.sessionMode}
+                              </span>
+
+                              {/* Room/Link */}
+                              {session.sessionMode !== "ONLINE" && session.room && (
+                                <span className="text-[11px] text-[#c7c4d7]/80 flex items-center gap-1 font-mono">
+                                  <MapPin size={12} className="text-[#f59e0b]" /> {session.room}
+                                </span>
+                              )}
+                              {session.sessionMode !== "OFFLINE" && session.meetingLink && (
+                                <a 
+                                  href={session.meetingLink} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-[11px] text-[#06b6d4] hover:underline flex items-center gap-1 font-mono"
+                                >
+                                  <LinkIcon size={12} /> Link
+                                </a>
+                              )}
+                            </div>
+
+                            {/* Notes display */}
+                            {session.notes && (
+                              <div className="text-[11px] text-[#c7c4d7]/70 bg-white/5 p-2 rounded-xl flex gap-1.5 items-start mt-2">
+                                <Info size={12} className="shrink-0 mt-0.5 text-[#8083ff]" />
+                                <span>{session.notes}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action controls (only for non-completed courses) */}
+                          <div className="flex items-center gap-2 shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!isSkipped && (
+                              <>
+                                <button
+                                  onClick={() => openOverrideModal(session)}
+                                  className="p-2 border border-white/5 bg-white/5 text-[#c7c4d7] hover:text-white rounded-xl hover:bg-white/10 transition-all cursor-pointer"
+                                  title="Override Session"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => openCancelModal(session)}
+                                  className="p-2 border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 text-[#ffb4ab] hover:bg-[#ffb4ab]/10 rounded-xl transition-all cursor-pointer"
+                                  title="Cancel or Shift Remaining"
+                                >
+                                  <XCircle size={14} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Immutable Audit Log Panel */}
+              <div className="glass-panel p-6 rounded-3xl border border-white/5 bg-[#17191d]/80 space-y-4">
+                <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                  <History size={16} className="text-[#8083ff]" />
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-[#c7c4d7]">
+                    Timeline Mutation Logs (Immutable Audit Trail)
+                  </h3>
+                </div>
+
+                {selectedCourse.mutationLogs.length === 0 ? (
+                  <p className="text-xs text-[#c7c4d7]/40 font-mono py-2">No timeline mutations recorded.</p>
+                ) : (
+                  <div className="space-y-3 font-mono text-[10px] text-[#c7c4d7]/80">
+                    {selectedCourse.mutationLogs.map((log) => (
+                      <div key={log.id} className="p-3 bg-white/5 rounded-xl border border-white/5 space-y-1">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                          <span className="font-bold text-[#8083ff]">{log.mutationType}</span>
+                          <span className="text-[#c7c4d7]/50">
+                            {new Date(log.createdAt).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                        <p className="text-white mt-1 font-sans">{log.reason || "Mutasi timeline diterapkan."}</p>
+                        <p className="text-[9px] text-[#c7c4d7]/60">
+                          Sequences affected: {log.affectedSequences.join(", ")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add Course Modal */}
+      {showAddCourse && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-xl mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowAddCourse(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleAddCourseSubmit} className="space-y-4 text-left">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <GraduationCap size={18} className="text-[#8083ff]" />
+                <h3 className="font-bold text-sm text-white">Create New Course Timeline</h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Course Title</label>
+                  <input
+                    type="text"
+                    value={courseForm.title}
+                    onChange={(e) => setCourseForm({ ...courseForm, title: e.target.value })}
+                    required
+                    placeholder="e.g. Kalkulus I"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Lecturer Name</label>
+                  <input
+                    type="text"
+                    value={courseForm.lecturer}
+                    onChange={(e) => setCourseForm({ ...courseForm, lecturer: e.target.value })}
+                    required
+                    placeholder="e.g. Dr. Budi"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Semester</label>
+                  <input
+                    type="number"
+                    value={courseForm.semester}
+                    onChange={(e) => setCourseForm({ ...courseForm, semester: Number(e.target.value) })}
+                    required
+                    min={1}
+                    max={14}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Academic Year</label>
+                  <input
+                    type="text"
+                    value={courseForm.academicYear}
+                    onChange={(e) => setCourseForm({ ...courseForm, academicYear: e.target.value })}
+                    required
+                    placeholder="e.g. 2026/2027"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Total Sessions</label>
+                  <input
+                    type="number"
+                    value={courseForm.totalSessions}
+                    onChange={(e) => setCourseForm({ ...courseForm, totalSessions: Number(e.target.value) })}
+                    required
+                    min={1}
+                    max={32}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Default Mode</label>
+                  <select
+                    value={courseForm.defaultSessionMode}
+                    onChange={(e) => setCourseForm({ ...courseForm, defaultSessionMode: e.target.value })}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                  >
+                    <option value="OFFLINE">OFFLINE</option>
+                    <option value="ONLINE">ONLINE</option>
+                    <option value="HYBRID">HYBRID</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {courseForm.defaultSessionMode !== "ONLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Default Location/Room</label>
+                    <input
+                      type="text"
+                      value={courseForm.defaultLocation}
+                      onChange={(e) => setCourseForm({ ...courseForm, defaultLocation: e.target.value })}
+                      placeholder="e.g. Ruang 302"
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                    />
+                  </div>
+                )}
+                {courseForm.defaultSessionMode !== "OFFLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Default Meeting Link</label>
+                    <input
+                      type="url"
+                      value={courseForm.defaultMeetingLink}
+                      onChange={(e) => setCourseForm({ ...courseForm, defaultMeetingLink: e.target.value })}
+                      placeholder="e.g. https://meet.google.com/..."
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 border-t border-white/5 pt-4">
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">First Session Date</label>
+                  <input
+                    type="date"
+                    value={courseForm.firstSessionDate}
+                    onChange={(e) => setCourseForm({ ...courseForm, firstSessionDate: e.target.value })}
+                    required
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Start Time</label>
+                  <input
+                    type="text"
+                    value={courseForm.startTime}
+                    onChange={(e) => setCourseForm({ ...courseForm, startTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">End Time</label>
+                  <input
+                    type="text"
+                    value={courseForm.endTime}
+                    onChange={(e) => setCourseForm({ ...courseForm, endTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCourse(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#8083ff] text-white text-xs font-semibold rounded-xl hover:bg-[#8083ff]/90 transition-all cursor-pointer shadow-lg shadow-[#8083ff]/10 active:scale-95"
+                >
+                  Create Timeline
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Override Modal */}
+      {showOverride && activeSession && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-lg mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowOverride(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleOverrideSubmit} className="space-y-4 text-left">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <Edit3 size={18} className="text-[#8083ff]" />
+                <h3 className="font-bold text-sm text-white">
+                  Override Session {activeSession.sequenceNumber}
+                </h3>
+              </div>
+
+              {/* Real-time Collision Diagnostics Warning Banner */}
+              {checkingCollisions ? (
+                <div className="text-[10px] text-[#c7c4d7]/70 font-mono py-1 px-3 bg-white/5 rounded-lg flex items-center gap-2">
+                  <RefreshCw size={12} className="animate-spin text-[#8083ff]" /> Checking conflicts...
+                </div>
+              ) : collisions.length > 0 ? (
+                <div className="p-3.5 bg-[#f97316]/10 border border-[#f97316]/20 rounded-2xl space-y-2 text-xs">
+                  <div className="flex gap-1.5 items-center text-[#f97316] font-bold">
+                    <AlertTriangle size={14} /> Warning: Scheduling Conflicts Detected!
+                  </div>
+                  <div className="space-y-1.5 pl-5 max-h-[100px] overflow-y-auto font-mono text-[10px] text-[#c7c4d7]">
+                    {collisions.map((c) => (
+                      <div key={c.id}>
+                        • [{c.severity}] Overlaps with <span className="text-white">"{c.title}"</span> 
+                        {c.courseTitle && ` (${c.courseTitle} - Pertemuan ${c.sequenceNumber})`}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Date</label>
+                  <input
+                    type="date"
+                    value={overrideForm.plannedDate}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, plannedDate: e.target.value })}
+                    required
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Start Time</label>
+                  <input
+                    type="text"
+                    value={overrideForm.startTime}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, startTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">End Time</label>
+                  <input
+                    type="text"
+                    value={overrideForm.endTime}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, endTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Session Type</label>
+                  <select
+                    value={overrideForm.sessionType}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, sessionType: e.target.value })}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                  >
+                    <option value="CLASS">CLASS (Standard Class)</option>
+                    <option value="QUIZ">QUIZ (Evaluasi Quiz)</option>
+                    <option value="MID_EXAM">MID_EXAM (UTS Ujian Tengah Semester)</option>
+                    <option value="FINAL_EXAM">FINAL_EXAM (UAS Ujian Akhir Semester)</option>
+                    <option value="PRESENTATION">PRESENTATION (Presentasi Kelompok)</option>
+                    <option value="LAB">LAB (Praktikum Lab)</option>
+                    <option value="PROJECT_REVIEW">PROJECT REVIEW</option>
+                    <option value="SEMINAR">SEMINAR</option>
+                    <option value="REPLACEMENT">REPLACEMENT (Kelas Pengganti)</option>
+                    <option value="HOLIDAY">HOLIDAY (Hari Libur)</option>
+                    <option value="CUSTOM">CUSTOM</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Session Mode</label>
+                  <select
+                    value={overrideForm.sessionMode}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, sessionMode: e.target.value })}
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                  >
+                    <option value="OFFLINE">OFFLINE</option>
+                    <option value="ONLINE">ONLINE</option>
+                    <option value="HYBRID">HYBRID</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {overrideForm.sessionMode !== "ONLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Room/Building</label>
+                    <input
+                      type="text"
+                      value={overrideForm.room}
+                      onChange={(e) => setOverrideForm({ ...overrideForm, room: e.target.value })}
+                      placeholder="e.g. Lab Komputer 2"
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                    />
+                  </div>
+                )}
+                {overrideForm.sessionMode !== "OFFLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Meeting Link</label>
+                    <input
+                      type="url"
+                      value={overrideForm.meetingLink}
+                      onChange={(e) => setOverrideForm({ ...overrideForm, meetingLink: e.target.value })}
+                      placeholder="e.g. https://meet.google.com/..."
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Session Notes</label>
+                <textarea
+                  value={overrideForm.notes}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, notes: e.target.value })}
+                  placeholder="e.g. Membawa laptop masing-masing untuk praktikum..."
+                  rows={2}
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowOverride(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#8083ff] text-white text-xs font-semibold rounded-xl hover:bg-[#8083ff]/90 transition-all cursor-pointer shadow-lg shadow-[#8083ff]/10 active:scale-95"
+                >
+                  Apply Override
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel/Shift Modal */}
+      {showCancel && activeSession && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 text-left">
+            <button
+              onClick={() => setShowCancel(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleCancelSubmit} className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <XCircle size={18} className="text-[#ffb4ab]" />
+                <h3 className="font-bold text-sm text-white">
+                  Cancel Session {activeSession.sequenceNumber}
+                </h3>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Cancellation Method</label>
+                <div className="grid grid-cols-1 gap-2">
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    cancelForm.action === "SKIP" ? "bg-[#ffb4ab]/5 border-[#ffb4ab]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
+                  }`}>
+                    <input 
+                      type="radio" 
+                      name="cancelAction" 
+                      value="SKIP" 
+                      checked={cancelForm.action === "SKIP"} 
+                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
+                      className="mt-1"
+                    />
+                    <div className="text-xs">
+                      <p className="font-bold text-white">SKIP: Skip Session</p>
+                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Pertemuan dibatalkan secara permanen, total pertemuan efektif berkurang.</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    cancelForm.action === "RESCHEDULE" ? "bg-[#f97316]/5 border-[#f97316]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
+                  }`}>
+                    <input 
+                      type="radio" 
+                      name="cancelAction" 
+                      value="RESCHEDULE" 
+                      checked={cancelForm.action === "RESCHEDULE"} 
+                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
+                      className="mt-1"
+                    />
+                    <div className="text-xs">
+                      <p className="font-bold text-white">RESCHEDULE: Reschedule This Session Only</p>
+                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Hanya sesi ini yang dipindahkan tanggal/waktunya. Sesi-sesi setelahnya tidak berubah.</p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    cancelForm.action === "SHIFT" ? "bg-[#8083ff]/5 border-[#8083ff]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
+                  }`}>
+                    <input 
+                      type="radio" 
+                      name="cancelAction" 
+                      value="SHIFT" 
+                      checked={cancelForm.action === "SHIFT"} 
+                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
+                      className="mt-1"
+                    />
+                    <div className="text-xs">
+                      <p className="font-bold text-white">SHIFT: Cascading Shift Timeline</p>
+                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Seluruh sesi tersisa (termasuk yang sekarang) bergeser maju seminggu. Total sessions tetap konsisten.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Conditional Inputs for Rescheduling */}
+              {cancelForm.action === "RESCHEDULE" && (
+                <div className="grid grid-cols-3 gap-2 border-t border-white/5 pt-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Date</label>
+                    <input
+                      type="date"
+                      value={cancelForm.newDate}
+                      onChange={(e) => setCancelForm({ ...cancelForm, newDate: e.target.value })}
+                      required
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Start</label>
+                    <input
+                      type="text"
+                      value={cancelForm.startTime}
+                      onChange={(e) => setCancelForm({ ...cancelForm, startTime: e.target.value })}
+                      required
+                      placeholder="HH:MM"
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">End</label>
+                    <input
+                      type="text"
+                      value={cancelForm.endTime}
+                      onChange={(e) => setCancelForm({ ...cancelForm, endTime: e.target.value })}
+                      required
+                      placeholder="HH:MM"
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional Cooldown Warnings for Cascading Shift */}
+              {cancelForm.action === "SHIFT" && (
+                <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Days to Shift</label>
+                    <input
+                      type="number"
+                      value={cancelForm.daysToShift}
+                      onChange={(e) => setCancelForm({ ...cancelForm, daysToShift: Number(e.target.value) })}
+                      required
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
+                    />
+                  </div>
+                  {cooldownWarning && (
+                    <div className="col-span-2 p-3 bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 rounded-xl space-y-2 mt-2">
+                      <div className="text-[10px] text-[#ffb4ab] font-sans flex items-start gap-1">
+                        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                        <span>{cooldownWarning}</span>
+                      </div>
+                      <label className="flex items-center gap-2 text-[10px] text-white font-semibold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={cancelForm.bypassCooldown}
+                          onChange={(e) => setCancelForm({ ...cancelForm, bypassCooldown: e.target.checked })}
+                        />
+                        Bypass cooldown protection
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1 border-t border-white/5 pt-4">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Reason/Notes</label>
+                <input
+                  type="text"
+                  value={cancelForm.reason}
+                  onChange={(e) => setCancelForm({ ...cancelForm, reason: e.target.value })}
+                  placeholder="e.g. Dosen berhalangan hadir..."
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowCancel(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#ffb4ab] text-[#601410] text-xs font-semibold rounded-xl hover:bg-[#ffb4ab]/90 transition-all cursor-pointer active:scale-95"
+                >
+                  Confirm Action
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

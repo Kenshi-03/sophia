@@ -31,6 +31,8 @@ model User {
   workingMemoryLogs    WorkingMemoryLog[]
   notes                Note[]
   thoughts             Thought[]
+  courses              Course[]
+  timelineMutationLogs TimelineMutationLog[]
 
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -135,12 +137,16 @@ model Event {
   userId        String
   user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  courseSessionId String?
+  courseSession   CourseSession? @relation(fields: [courseSessionId], references: [id], onDelete: Cascade)
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@unique([userId, googleEventId])
   @@index([userId])
   @@index([userId, startTime])
+  @@index([courseSessionId])
 }
 
 model UserSettings {
@@ -380,4 +386,117 @@ model Thought {
   updatedAt         DateTime  @updatedAt
 
   @@index([userId])
+}
+
+enum CourseSessionType {
+  CLASS
+  QUIZ
+  MID_EXAM
+  FINAL_EXAM
+  PRESENTATION
+  LAB
+  PROJECT_REVIEW
+  SEMINAR
+  REPLACEMENT
+  HOLIDAY
+  CUSTOM
+}
+
+enum CourseSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  SKIPPED
+}
+
+enum CourseSessionMode {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum TimelineMutationType {
+  OVERRIDE
+  RESCHEDULE
+  SHIFT_FORWARD
+  SHIFT_BACKWARD
+  CANCEL
+  SKIP
+  MODE_CHANGE
+  ROOM_CHANGE
+  SEQUENCE_REBUILD
+}
+
+model Course {
+  id                 String                @id @default(cuid())
+  userId             String
+  title              String
+  lecturer           String
+  semester           Int
+  academicYear       String
+  totalSessions      Int
+  categoryType       CognitiveCategoryType @default(ACADEMIC)
+  defaultSessionMode CourseSessionMode     @default(OFFLINE)
+  defaultLocation    String?
+  defaultMeetingLink String?
+  timelineVersion    Int                   @default(1)
+  deletedAt          DateTime?
+
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions           CourseSession[]
+  mutationLogs       TimelineMutationLog[]
+
+  @@index([userId])
+}
+
+model CourseSession {
+  id             String              @id @default(cuid())
+  courseId       String
+  sequenceNumber Int
+  sessionType    CourseSessionType   @default(CLASS)
+  plannedDate    DateTime
+  actualDate     DateTime?
+  startTime      String              // Format: "HH:MM"
+  endTime        String              // Format: "HH:MM"
+  status         CourseSessionStatus @default(SCHEDULED)
+  sessionMode    CourseSessionMode
+  room           String?
+  meetingLink    String?
+  notes          String?
+  deletedAt      DateTime?
+
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  course         Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  events         Event[]
+  mutationLogs   TimelineMutationLog[]
+
+  @@index([courseId])
+  @@index([courseId, sequenceNumber])
+}
+
+model TimelineMutationLog {
+  id                String               @id @default(cuid())
+  userId            String
+  courseId          String
+  courseSessionId   String?
+  mutationType      TimelineMutationType
+  affectedSequences Int[]
+  previousState     Json?
+  newState          Json?
+  reason            String?
+  createdAt         DateTime             @default(now())
+
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course            Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseSession     CourseSession?       @relation(fields: [courseSessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([courseSessionId])
 }
