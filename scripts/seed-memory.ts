@@ -23,7 +23,7 @@
  * @module seed-memory
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, MemorySourceType } from "@prisma/client";
 import crypto from "crypto";
 import { RetrievalArbitrationHooks } from "../lib/ai/working-memory/arbitration";
 import { ReflectionBuffer } from "../lib/ai/working-memory/reflection-buffer";
@@ -1483,6 +1483,24 @@ async function main() {
       dbMemoryType = "episodic";
     }
 
+    // Map sourceType to MemorySourceType enum and define lineage metadata
+    let dbSourceType: MemorySourceType = MemorySourceType.EPISODIC;
+    let originType = "EPISODIC";
+    let originContext = "seed_episodic";
+    if (mem.sourceType === "system" || mem.sourceType === "roadmap") {
+      dbSourceType = MemorySourceType.SYSTEM;
+      originType = "SYSTEM";
+      originContext = mem.sourceType === "system" ? "reflection_runtime" : "roadmap_anchor";
+    } else if (mem.sourceType === "explicit_user") {
+      dbSourceType = MemorySourceType.NOTE;
+      originType = "NOTE";
+      originContext = "dashboard_notes";
+    } else if (mem.sourceType === "synthetic") {
+      dbSourceType = MemorySourceType.INFERRED;
+      originType = "INFERRED";
+      originContext = "ai_consolidation";
+    }
+
     if (existing) {
       await prisma.memoryNode.update({
         where: { id: mem.id },
@@ -1492,7 +1510,9 @@ async function main() {
           tags: dbTags,
           importance: mem.importance ?? 1.0,
           decayRate: mem.decayRate ?? 0.01,
-          sourceType: mem.sourceType,
+          sourceType: dbSourceType,
+          originType,
+          originContext,
           visibility: mem.visibility || "private",
           taxonomy: mem.taxonomy || "reflection",
           contentHash: hash,
@@ -1512,7 +1532,9 @@ async function main() {
           tags: dbTags,
           importance: mem.importance ?? 1.0,
           decayRate: mem.decayRate ?? 0.01,
-          sourceType: mem.sourceType,
+          sourceType: dbSourceType,
+          originType,
+          originContext,
           visibility: mem.visibility || "private",
           taxonomy: mem.taxonomy || "reflection",
           contentHash: hash,

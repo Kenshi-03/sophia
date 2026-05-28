@@ -3,6 +3,7 @@ import { auth } from './auth';
 import { prisma } from '@/lib/db/prisma';
 import { redirect } from 'next/navigation';
 import crypto from 'crypto';
+import { MemorySourceType } from '@prisma/client';
 
 export function isDevCognitionModeEnabled(): boolean {
   return process.env.NODE_ENV === 'development' && process.env.DEV_COGNITION_MODE === 'true';
@@ -58,7 +59,7 @@ async function ensureDevUserAndSeeds() {
         tags: ["roadmap", "phase-d"],
         importance: 1.0,
         decayRate: 0.001,
-        sourceType: "chat",
+        sourceType: "EPISODIC",
         visibility: "private",
         taxonomy: "roadmap",
         reliability: 1.0,
@@ -70,7 +71,7 @@ async function ensureDevUserAndSeeds() {
         tags: ["focus", "dev-mode"],
         importance: 0.95,
         decayRate: 0.002,
-        sourceType: "chat",
+        sourceType: "EPISODIC",
         visibility: "private",
         taxonomy: "roadmap",
         reliability: 1.0,
@@ -82,7 +83,7 @@ async function ensureDevUserAndSeeds() {
         tags: ["reflection", "tokenization"],
         importance: 0.80,
         decayRate: 0.02,
-        sourceType: "chat",
+        sourceType: "EPISODIC",
         visibility: "private",
         taxonomy: "reflection",
         reliability: 0.90,
@@ -94,7 +95,7 @@ async function ensureDevUserAndSeeds() {
         tags: ["reflection", "tokenization"],
         importance: 0.80,
         decayRate: 0.02,
-        sourceType: "chat",
+        sourceType: "EPISODIC",
         visibility: "private",
         taxonomy: "reflection",
         reliability: 0.90,
@@ -106,7 +107,7 @@ async function ensureDevUserAndSeeds() {
         tags: ["unconfirmed", "low-reliability"],
         importance: 0.10,
         decayRate: 0.06,
-        sourceType: "chat",
+        sourceType: "EPISODIC",
         visibility: "private",
         taxonomy: "reflection",
         reliability: 0.20,
@@ -122,7 +123,7 @@ async function ensureDevUserAndSeeds() {
           tags: mem.tags,
           importance: mem.importance,
           decayRate: mem.decayRate,
-          sourceType: mem.sourceType,
+          sourceType: mem.sourceType as MemorySourceType,
           visibility: mem.visibility,
           taxonomy: mem.taxonomy,
           contentHash: computeContentHash(mem.content),

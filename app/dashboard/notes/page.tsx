@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import {
   Plus,
   FolderOpen,
@@ -12,6 +12,12 @@ import {
   Sparkles,
 } from "lucide-react"
 import PageHeader from "@/components/shared/page-header"
+import {
+  getNotesAction,
+  createNoteAction,
+  updateNoteAction,
+  deleteNoteAction
+} from "@/app/actions/notes"
 
 interface Note {
   id: string
@@ -23,39 +29,20 @@ interface Note {
   updatedAt: string
 }
 
-const initialNotes: Note[] = [
-  {
-    id: "note-1",
-    title: "SOPHIA System Architecture Proposal",
-    content: "## Core Multi-Agent Flow\n\nDesigning a personal cognitive OS mapping schedules to memory database models. Highlighting multi-agent modules and sub-agent communication.\n\n### abstraction models\n- Router decides query target\n- Context manager formats context\n- Response generator calls LLM via Gemini",
-    category: "References",
-    notebook: "Research",
-    tags: ["sophia", "architecture", "agents"],
-    updatedAt: "2 hrs ago",
-  },
-  {
-    id: "note-2",
-    title: "Latent Space Vector Synapses Idea",
-    content: "## Projection Indexing\n\nUsing cosine similarity for note retrievals. Extract tags as structural metadata, then run a local indexing pass to connect notes directly into the schedule items.",
-    category: "Ideas",
-    notebook: "Personal",
-    tags: ["vector-search", "concepts"],
-    updatedAt: "Yesterday",
-  },
-  {
-    id: "note-3",
-    title: "Daily Focus & High Load Reminders",
-    content: "## Morning checklist\n- Check system cognitive load pill\n- Resolve outstanding calendar conflict items\n- Allocate 90 minutes of deep focus code writing",
-    category: "Reminders",
-    notebook: "Academics",
-    tags: ["checklist", "productivity"],
-    updatedAt: "3 days ago",
-  },
-]
+const formatDate = (dateStr: string) => {
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })
+  } catch {
+    return dateStr
+  }
+}
 
 export default function NotesPage() {
-  const [notes, setNotes] = useState<Note[]>(initialNotes)
+  const [notes, setNotes] = useState<Note[]>([])
   const [activeNotebook, setActiveNotebook] = useState<"All" | "Personal" | "Research" | "Academics">("All")
+  const [isLoading, setIsLoading] = useState(true)
   
   // Editor States
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
@@ -68,6 +55,24 @@ export default function NotesPage() {
   const [editCategory, setEditCategory] = useState<"Ideas" | "References" | "Reminders">("Ideas")
   const [editNotebook, setEditNotebook] = useState<"Personal" | "Research" | "Academics">("Personal")
   const [editTags, setEditTags] = useState("")
+
+  // Fetch Notes on Mount
+  useEffect(() => {
+    async function loadNotes() {
+      try {
+        setIsLoading(true)
+        const res = await getNotesAction()
+        if (res.success && res.notes) {
+          setNotes(res.notes as any[])
+        }
+      } catch (err) {
+        console.error("Failed to load notes:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadNotes()
+  }, [])
 
   const handleOpenNote = (note: Note, editMode = false) => {
     setSelectedNote(note)
@@ -91,7 +96,7 @@ export default function NotesPage() {
     setIsCreating(true)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editTitle.trim()) return
 
     const tagsArray = editTags
@@ -99,42 +104,62 @@ export default function NotesPage() {
       .map((t) => t.trim().toLowerCase())
       .filter((t) => t.length > 0)
 
-    if (isCreating) {
-      const newNote: Note = {
-        id: `note-${Date.now()}`,
-        title: editTitle,
-        content: editContent,
-        category: editCategory,
-        notebook: editNotebook,
-        tags: tagsArray,
-        updatedAt: "Just now",
+    try {
+      setIsLoading(true)
+      if (isCreating) {
+        const res = await createNoteAction({
+          title: editTitle,
+          content: editContent,
+          category: editCategory,
+          notebook: editNotebook,
+          tags: tagsArray,
+        })
+        if (res.success && res.note) {
+          const newNote = res.note as any
+          setNotes([newNote, ...notes])
+          setSelectedNote(newNote)
+        }
+      } else if (selectedNote) {
+        const res = await updateNoteAction(selectedNote.id, {
+          title: editTitle,
+          content: editContent,
+          category: editCategory,
+          notebook: editNotebook,
+          tags: tagsArray,
+        })
+        if (res.success && res.note) {
+          const updatedNote = res.note as any
+          setNotes(notes.map((n) => (n.id === selectedNote.id ? updatedNote : n)))
+          setSelectedNote(updatedNote)
+        }
       }
-      setNotes([newNote, ...notes])
-      setSelectedNote(newNote)
-    } else if (selectedNote) {
-      const updatedNote: Note = {
-        ...selectedNote,
-        title: editTitle,
-        content: editContent,
-        category: editCategory,
-        notebook: editNotebook,
-        tags: tagsArray,
-        updatedAt: "Just now",
-      }
-      setNotes(notes.map((n) => (n.id === selectedNote.id ? updatedNote : n)))
-      setSelectedNote(updatedNote)
+    } catch (err) {
+      console.error("Failed to save note:", err)
+    } finally {
+      setIsLoading(false)
+      setIsEditing(false)
+      setIsCreating(false)
     }
-    
-    setIsEditing(false)
-    setIsCreating(false)
   }
 
-  const handleDelete = (noteId: string, e: React.MouseEvent) => {
+  const handleDelete = async (noteId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setNotes(notes.filter((n) => n.id !== noteId))
-    if (selectedNote?.id === noteId) {
-      setSelectedNote(null)
-      setIsEditing(false)
+    if (!confirm("Are you sure you want to delete this note?")) return
+
+    try {
+      setIsLoading(true)
+      const res = await deleteNoteAction(noteId)
+      if (res.success) {
+        setNotes(notes.filter((n) => n.id !== noteId))
+        if (selectedNote?.id === noteId) {
+          setSelectedNote(null)
+          setIsEditing(false)
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete note:", err)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -329,7 +354,7 @@ export default function NotesPage() {
                         <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${styles.bg} ${styles.text} flex items-center gap-1`}>
                           <Tag size={8} /> {note.category}
                         </span>
-                        <span className="text-[10px] text-[#c7c4d7]/40 font-mono">{note.updatedAt}</span>
+                        <span className="text-[10px] text-[#c7c4d7]/40 font-mono">{formatDate(note.updatedAt)}</span>
                       </div>
                       
                       <h3 className="font-bold text-sm text-white group-hover:text-[#c0c1ff] transition-colors line-clamp-1">

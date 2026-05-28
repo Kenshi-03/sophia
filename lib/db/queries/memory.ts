@@ -2,6 +2,7 @@ import prisma from '../prisma';
 import { invalidateUserCache } from '../../redis';
 import { memoryQueue } from '../../queue/client';
 import { computeContentHash } from '../../ai/memory/embedding';
+import { MemorySourceType } from '@prisma/client';
 
 export async function createMemoryNode(data: {
   content: string;
@@ -10,7 +11,12 @@ export async function createMemoryNode(data: {
   tags?: string[];
   importance?: number;
   decayRate?: number;
-  sourceType?: string;
+  sourceType?: MemorySourceType;
+  sourceId?: string;
+  indexingStatus?: string;
+  indexedAt?: Date;
+  originType?: string;
+  originContext?: string;
   visibility?: string;
   taxonomy?: string;
   reliability?: number;
@@ -27,12 +33,17 @@ export async function createMemoryNode(data: {
         tags: data.tags || [],
         importance: data.importance ?? 1.0,
         decayRate: data.decayRate ?? 0.01,
-        sourceType: data.sourceType ?? "chat",
-        visibility: data.visibility ?? "private",
-        taxonomy: data.taxonomy ?? "reflection",
+        sourceType: data.sourceType ?? 'EPISODIC',
+        sourceId: data.sourceId,
+        indexingStatus: data.indexingStatus ?? 'PENDING',
+        indexedAt: data.indexedAt,
+        originType: data.originType,
+        originContext: data.originContext,
+        visibility: data.visibility ?? 'private',
+        taxonomy: data.taxonomy ?? 'reflection',
         contentHash: hash,
         reliability: data.reliability ?? 1.0,
-        memoryType: data.memoryType ?? "hybrid",
+        memoryType: data.memoryType ?? 'hybrid',
       },
     });
 
@@ -58,7 +69,7 @@ export async function createMemoryNode(data: {
       tags: data.tags || [],
       importance: data.importance ?? 1.0,
       decayRate: data.decayRate ?? 0.01,
-      sourceType: data.sourceType ?? "chat",
+      sourceType: data.sourceType ?? "EPISODIC",
       visibility: data.visibility ?? "private",
       taxonomy: data.taxonomy ?? "reflection",
       contentHash: computeContentHash(data.content),
@@ -110,7 +121,12 @@ export async function updateMemoryNode(
     tags?: string[];
     importance?: number;
     decayRate?: number;
-    sourceType?: string;
+    sourceType?: MemorySourceType;
+    sourceId?: string;
+    indexingStatus?: string;
+    indexedAt?: Date;
+    originType?: string;
+    originContext?: string;
     visibility?: string;
     taxonomy?: string;
     reliability?: number;
@@ -129,6 +145,11 @@ export async function updateMemoryNode(
         importance: data.importance,
         decayRate: data.decayRate,
         sourceType: data.sourceType,
+        sourceId: data.sourceId,
+        indexingStatus: data.indexingStatus,
+        indexedAt: data.indexedAt,
+        originType: data.originType,
+        originContext: data.originContext,
         visibility: data.visibility,
         taxonomy: data.taxonomy,
         contentHash: hash,

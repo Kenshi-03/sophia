@@ -29,6 +29,8 @@ model User {
   memoryRelations      MemoryRelation[]
   dailyCognitiveStates DailyCognitiveState[]
   workingMemoryLogs    WorkingMemoryLog[]
+  notes                Note[]
+  thoughts             Thought[]
 
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
@@ -78,21 +80,27 @@ model MemoryNode {
   tags       String[]
   importance Float    @default(1.0)
   decayRate  Float    @default(0.01)
-  sourceType String?  @default("chat")
-  visibility String   @default("private") // private, ai-only, restricted, shareable
-  taxonomy   String   @default("reflection") // reflection, stress-marker, recovery-event, deep-work-session, insight, planning
-  contentHash String? @default("")
-  reliability Float   @default(1.0)
-  memoryType String   @default("hybrid") // episodic, semantic, hybrid
+  sourceType     MemorySourceType? @default(EPISODIC)
+  sourceId       String?
+  indexingStatus String            @default("PENDING")
+  indexedAt      DateTime?
+  originType     String?
+  originContext  String?
+  visibility     String            @default("private") // private, ai-only, restricted, shareable
+  taxonomy       String            @default("reflection") // reflection, stress-marker, recovery-event, deep-work-session, insight, planning
+  contentHash    String?           @default("")
+  reliability    Float             @default(1.0)
+  memoryType     String            @default("hybrid") // episodic, semantic, hybrid
 
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  embedding  MemoryEmbedding?
+  embedding      MemoryEmbedding?
 
-  createdAt  DateTime @default(now())
+  createdAt      DateTime          @default(now())
 
   @@index([userId])
+  @@index([sourceId, sourceType])
 }
 
 model Task {
@@ -314,4 +322,49 @@ model WorkingMemoryLog {
   @@index([userId])
   @@index([sessionId])
   @@index([createdAt])
+}
+
+enum MemorySourceType {
+  NOTE
+  THOUGHT
+  EPISODIC
+  SYSTEM
+  INFERRED
+}
+
+model Note {
+  id         String    @id @default(cuid())
+  title      String
+  content    String    @db.Text
+  category   String    @default("Ideas") // Ideas, References, Reminders
+  notebook   String    @default("Personal") // Personal, Research, Academics
+  tags       String[]
+  isArchived Boolean   @default(false)
+  deletedAt  DateTime?
+
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Thought {
+  id                String    @id @default(cuid())
+  content           String    @db.Text
+  tags              String[]
+  visibility        String    @default("PRIVATE")
+  retrievalEligible Boolean   @default(true)
+  isArchived        Boolean   @default(false)
+  deletedAt         DateTime?
+
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
 }

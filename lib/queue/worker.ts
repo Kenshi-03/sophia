@@ -5,6 +5,7 @@ import { syncUserCalendar } from '../google/calendar/sync';
 import { generateCognitiveBriefing } from '../ai/cognitive/briefing-generator';
 import { cacheManager } from '../cache/cache-manager';
 import prisma from '../db/prisma';
+import { MemorySourceType } from '@prisma/client';
 import { decrypt } from '../security/encryption';
 import { generateGatewayResponse } from '../ai/gateway/maia_gateway';
 import { getEmbedding } from '../ai/memory/embedding';
@@ -203,7 +204,9 @@ Respond ONLY with a JSON object in this format:
               category: insight.category || "Reflection",
               importance: insight.importance || 0.7,
               decayRate: 0.002, // Semantic memories decay slower
-              sourceType: 'ai-consolidation',
+              sourceType: MemorySourceType.INFERRED,
+              originType: 'INFERRED',
+              originContext: 'ai_consolidation',
               visibility: 'ai-only',
               taxonomy: insight.taxonomy || 'insight',
               reliability: 0.8,

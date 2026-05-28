@@ -47,7 +47,12 @@ export type RetrievalSourceType =
   | 'user_profile'
   | 'relationship_link'
   | 'active_session_context'
-  | 'synthetic_context';
+  | 'synthetic_context'
+  | 'NOTE'
+  | 'THOUGHT'
+  | 'EPISODIC'
+  | 'SYSTEM'
+  | 'INFERRED';
 
 export type ExecutionPriority = 'low' | 'normal' | 'high' | 'critical';
 
