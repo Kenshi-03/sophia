@@ -9,10 +9,9 @@ export async function checkUserAiQuota(userId: string): Promise<{
   limit: number;
   resetSeconds: number;
 }> {
-  const client = getRedisClient();
-  const key = `${CACHE_PREFIX}user:${userId}:ai_quota`;
-  
   try {
+    const client = getRedisClient();
+    const key = `${CACHE_PREFIX}user:${userId}:ai_quota`;
     const current = await client.get(key);
     
     if (!current) {

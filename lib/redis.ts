@@ -131,13 +131,13 @@ export function getRedisClient(): any {
     return redisInstance;
   }
 
-  // Upstash REST client setup
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (!url || !token) {
-    logger.error('SOPHIA Redis configuration missing: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be configured.');
-    throw new Error('SOPHIA Redis configuration missing');
+    logger.warn('SOPHIA Redis configuration missing: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be configured. Falling back to in-memory RedisMock.');
+    redisInstance = new RedisMock();
+    return redisInstance;
   }
 
   logger.info('Initializing Upstash Serverless Redis client instance');
@@ -180,13 +180,13 @@ export function getRedisTCPConnection(): any {
     return tcpConnectionInstance;
   }
 
-  // Production or standard Upstash TCP for BullMQ
   const restUrl = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
   if (!restUrl || !token) {
-    logger.error('SOPHIA Redis configuration missing: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for TCP connections.');
-    throw new Error('SOPHIA Redis configuration missing');
+    logger.warn('SOPHIA Redis configuration missing: UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for TCP connections. Falling back to in-memory RedisMock.');
+    tcpConnectionInstance = new RedisMock();
+    return tcpConnectionInstance;
   }
 
   if (!tcpConnectionInstance || tcpConnectionInstance instanceof RedisMock) {
