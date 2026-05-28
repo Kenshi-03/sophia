@@ -6,7 +6,8 @@ import {
   ToolLifecycleState,
   ToolExecutionContract,
   ToolExecutionTelemetry,
-  WorkingMemoryState
+  WorkingMemoryState,
+  FailurePattern
 } from '@/lib/ai/working-memory/types';
 import { WorkingMemory } from '@/lib/ai/working-memory/store';
 import {
@@ -15,6 +16,7 @@ import {
   CancellationManager,
   TimeoutManager
 } from './async-runtime';
+import { RecoveryCoordinator } from './recovery-coordinator';
 
 // Import wrapped capabilities
 import { retrieveRelevantMemories } from '@/lib/ai/memory/retrieve-memory';
@@ -79,7 +81,10 @@ export const memorySearchTool: ToolDefinition = {
     }),
     outputSchema: z.array(z.any()),
     timeoutMs: 10000,
-    maxRetries: 0,
+    maxRetries: 1,
+    degradationAllowed: false,
+    failureSeverity: 'critical',
+    failurePatterns: [{ match: 'timeout', classification: 'TIMEOUT_FAILURE', retryPolicy: 'SAFE_ONCE' }] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['RETRIEVAL']
     },
@@ -104,6 +109,9 @@ export const scheduleLookupTool: ToolDefinition = {
     outputSchema: z.array(z.any()),
     timeoutMs: 5000,
     maxRetries: 0,
+    degradationAllowed: true,
+    failureSeverity: 'low',
+    failurePatterns: [{ match: 'timeout', classification: 'TIMEOUT_FAILURE', retryPolicy: 'NONE' }] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['RETRIEVAL']
     },
@@ -140,6 +148,9 @@ export const arbitrationEngineTool: ToolDefinition = {
     }),
     timeoutMs: 5000,
     maxRetries: 0,
+    degradationAllowed: false,
+    failureSeverity: 'critical',
+    failurePatterns: [] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['ARBITRATION']
     },
@@ -169,7 +180,10 @@ export const responseGenerationTool: ToolDefinition = {
     }),
     outputSchema: z.string(),
     timeoutMs: 25000,
-    maxRetries: 0,
+    maxRetries: 1,
+    degradationAllowed: false,
+    failureSeverity: 'critical',
+    failurePatterns: [{ match: 'timeout', classification: 'TIMEOUT_FAILURE', retryPolicy: 'SAFE_ONCE' }] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['GENERATION']
     },
@@ -196,6 +210,9 @@ export const reflectionVerifyTool: ToolDefinition = {
     outputSchema: z.any(),
     timeoutMs: 5000,
     maxRetries: 0,
+    degradationAllowed: false,
+    failureSeverity: 'critical',
+    failurePatterns: [] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['REFLECTION']
     },
@@ -222,6 +239,9 @@ export const postgresPersistTool: ToolDefinition = {
     outputSchema: z.any(),
     timeoutMs: 5000,
     maxRetries: 0,
+    degradationAllowed: true,
+    failureSeverity: 'low',
+    failurePatterns: [] as FailurePattern[],
     permissionScopes: {
       allowedStages: ['PERSISTENCE']
     },
@@ -418,98 +438,113 @@ export class ToolExecutionManager {
       throw err;
     }
 
-    // 3. Execution via AsyncScheduler
-    await updateTelemetry(e => {
-      e.lifecycleState = 'EXECUTING';
-      e.startedAt = startTimeStr;
-    });
+    let retryCount = 0;
+    const coordinator = new RecoveryCoordinator(this.wm);
 
-    const signal = CancellationManager.createScope(this.requestId);
+    while (true) {
+      // 3. Execution via AsyncScheduler
+      await updateTelemetry(e => {
+        e.lifecycleState = 'EXECUTING';
+        e.startedAt = startTimeStr;
+        e.retryCount = retryCount;
+      });
 
-    let isTimedOut = false;
-    const taskTimeoutMs = contract.timeoutMs || 10000;
-    TimeoutManager.registerTimeout(this.requestId, taskTimeoutMs, () => {
-      isTimedOut = true;
-      CancellationManager.cancelScope(this.requestId, `Tool ${toolId} execution timeout triggered after ${taskTimeoutMs}ms`);
-    });
+      const signal = CancellationManager.createScope(this.requestId);
 
-    const taskRunner = new AsyncTaskRunner({
-      taskId: `tool_${toolId}_${startTimeMs}`,
-      taskType: `tool_${toolId}`,
-      parentRequestId: this.requestId,
-      lifecycleState: currentStage,
-      isCritical: isCritical,
-      timeoutMs: taskTimeoutMs,
-      execute: async (taskSignal) => {
-        // Enforce payload size limit
-        const payloadStr = JSON.stringify(validatedInput);
-        if (contract.resourceLimits.maxPayloadBytes && payloadStr.length > contract.resourceLimits.maxPayloadBytes) {
-          throw new Error(`Resource Limit Exceeded: Input payload size (${payloadStr.length} bytes) exceeds limit of ${contract.resourceLimits.maxPayloadBytes} bytes.`);
+      let isTimedOut = false;
+      const taskTimeoutMs = contract.timeoutMs || 10000;
+      TimeoutManager.registerTimeout(this.requestId, taskTimeoutMs, () => {
+        isTimedOut = true;
+        CancellationManager.cancelScope(this.requestId, `Tool ${toolId} execution timeout triggered after ${taskTimeoutMs}ms`);
+      });
+
+      const taskRunner = new AsyncTaskRunner({
+        taskId: `tool_${toolId}_${startTimeMs}_attempt_${retryCount}`,
+        taskType: `tool_${toolId}`,
+        parentRequestId: this.requestId,
+        lifecycleState: currentStage,
+        isCritical: isCritical,
+        timeoutMs: taskTimeoutMs,
+        execute: async (taskSignal) => {
+          // Enforce payload size limit
+          const payloadStr = JSON.stringify(validatedInput);
+          if (contract.resourceLimits.maxPayloadBytes && payloadStr.length > contract.resourceLimits.maxPayloadBytes) {
+            throw new Error(`Resource Limit Exceeded: Input payload size (${payloadStr.length} bytes) exceeds limit of ${contract.resourceLimits.maxPayloadBytes} bytes.`);
+          }
+          
+          return await tool.execute(validatedInput, taskSignal, options);
         }
-        
-        return await tool.execute(validatedInput, taskSignal, options);
-      }
-    });
-
-    try {
-      const output = await AsyncScheduler.schedule(taskRunner, signal);
-
-      // Enforce response size limits if defined
-      const outputStr = JSON.stringify(output);
-      if (contract.resourceLimits.maxPayloadBytes && outputStr.length > contract.resourceLimits.maxPayloadBytes) {
-        throw new Error(`Resource Limit Exceeded: Output payload size (${outputStr.length} bytes) exceeds limit of ${contract.resourceLimits.maxPayloadBytes} bytes.`);
-      }
-
-      // 4. Output Verification
-      const validatedOutput = ToolVerificationLayer.validateOutput(contract, output);
-
-      const endTimeMs = Date.now();
-      const latencyMs = endTimeMs - startTimeMs;
-
-      // Deterministic resource cleanup
-      TimeoutManager.clearScopeTimers(this.requestId);
-
-      await updateTelemetry(e => {
-        e.lifecycleState = 'COMPLETED';
-        e.output = validatedOutput;
-        e.completedAt = new Date().toISOString();
-        e.latencyMs = latencyMs;
-        e.outputHash = crypto.createHash('sha256').update(outputStr).digest('hex');
-        e.budgetUsage = {
-          latencyMs,
-          payloadSize: outputStr.length
-        };
       });
 
-      return validatedOutput as O;
+      try {
+        const output = await AsyncScheduler.schedule(taskRunner, signal);
 
-    } catch (err: any) {
-      const endTimeMs = Date.now();
-      const latencyMs = endTimeMs - startTimeMs;
+        // Enforce response size limits if defined
+        const outputStr = JSON.stringify(output);
+        if (contract.resourceLimits.maxPayloadBytes && outputStr.length > contract.resourceLimits.maxPayloadBytes) {
+          throw new Error(`Resource Limit Exceeded: Output payload size (${outputStr.length} bytes) exceeds limit of ${contract.resourceLimits.maxPayloadBytes} bytes.`);
+        }
 
-      let finalState: ToolLifecycleState = 'FAILED';
-      if (signal.aborted) {
-        finalState = isTimedOut ? 'TIMEOUT' : 'CANCELLED';
-      }
+        // 4. Output Verification
+        const validatedOutput = ToolVerificationLayer.validateOutput(contract, output);
 
-      // Deterministic resource cleanup
-      TimeoutManager.clearScopeTimers(this.requestId);
+        const endTimeMs = Date.now();
+        const latencyMs = endTimeMs - startTimeMs;
 
-      await updateTelemetry(e => {
-        e.lifecycleState = finalState;
-        e.error = err.message || String(err);
-        e.completedAt = new Date().toISOString();
-        e.latencyMs = latencyMs;
-        e.budgetUsage = { latencyMs, payloadSize: 0 };
-      });
+        // Deterministic resource cleanup
+        TimeoutManager.clearScopeTimers(this.requestId);
 
-      if (isCritical) {
-        throw err;
-      } else {
         await updateTelemetry(e => {
-          e.lifecycleState = 'DEGRADED';
+          e.lifecycleState = 'COMPLETED';
+          e.output = validatedOutput;
+          e.completedAt = new Date().toISOString();
+          e.latencyMs = latencyMs;
+          e.outputHash = crypto.createHash('sha256').update(outputStr).digest('hex');
+          e.budgetUsage = {
+            latencyMs,
+            payloadSize: outputStr.length
+          };
         });
-        return null as any;
+
+        return validatedOutput as O;
+
+      } catch (err: any) {
+        const endTimeMs = Date.now();
+        const latencyMs = endTimeMs - startTimeMs;
+
+        let finalState: ToolLifecycleState = 'FAILED';
+        if (signal.aborted) {
+          finalState = isTimedOut ? 'TIMEOUT' : 'CANCELLED';
+        }
+
+        // Deterministic resource cleanup
+        TimeoutManager.clearScopeTimers(this.requestId);
+
+        await updateTelemetry(e => {
+          e.lifecycleState = finalState;
+          e.error = err.message || String(err);
+          e.completedAt = new Date().toISOString();
+          e.latencyMs = latencyMs;
+          e.budgetUsage = { latencyMs, payloadSize: 0 };
+        });
+
+        // 5. Recovery Coordination
+        const recoveryResult = await coordinator.handleToolFailure(toolId, contract, err, retryCount);
+
+        if (recoveryResult.action === 'retry') {
+          retryCount++;
+          if (recoveryResult.retryDelayMs) {
+            await new Promise(resolve => setTimeout(resolve, recoveryResult.retryDelayMs));
+          }
+          continue;
+        } else if (recoveryResult.action === 'degrade') {
+          await updateTelemetry(e => {
+            e.lifecycleState = 'DEGRADED';
+          });
+          return null as any;
+        } else {
+          throw err;
+        }
       }
     }
   }

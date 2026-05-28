@@ -322,6 +322,8 @@ export interface WorkingMemoryState {
   executionContext?: ExecutionContext;
   asyncTelemetry?: AsyncRuntimeTelemetry;
   toolTelemetry?: ToolExecutionTelemetry[];
+  recoveryTelemetry?: RecoveryTelemetry[];
+  diagnosticsReport?: DiagnosticsReport;
 }
 
 export interface FSMTelemetry {
@@ -397,6 +399,9 @@ export interface ToolExecutionContract<I extends z.ZodTypeAny = z.ZodTypeAny, O 
   outputSchema: O;
   timeoutMs: number;
   maxRetries: number;
+  degradationAllowed: boolean;
+  failureSeverity: 'low' | 'medium' | 'high' | 'critical';
+  failurePatterns: FailurePattern[];
   permissionScopes: {
     allowedStages: ExecutiveLifecycleState[];
     allowedIntents?: string[];
@@ -435,5 +440,58 @@ export interface ToolExecutionTelemetry {
     | 'DEGRADED_FALLBACK'
     | 'ROUTE_REJECTED';
   routingReasonDetail?: string;
+}
+
+export type FailureClassification =
+  | 'CRITICAL_FAILURE'
+  | 'RECOVERABLE_FAILURE'
+  | 'OPTIONAL_FAILURE'
+  | 'TIMEOUT_FAILURE'
+  | 'CANCELLATION_FAILURE'
+  | 'VALIDATION_FAILURE'
+  | 'RESOURCE_FAILURE'
+  | 'ORCHESTRATION_FAILURE';
+
+export type RetryPolicy = 'NONE' | 'SAFE_ONCE' | 'SAFE_TWICE';
+
+export interface FailurePattern {
+  match: string; // Regex string or exact string
+  classification: FailureClassification;
+  retryPolicy: RetryPolicy;
+}
+
+export type RecoveryOutcome = 'RECOVERED' | 'DEGRADED' | 'FAILED' | 'CANCELLED';
+
+export type OrchestrationHealth = 'HEALTHY' | 'WARNING' | 'DEGRADED' | 'FAILED';
+
+export interface RecoveryTelemetry {
+  failureType: FailureClassification;
+  originatingToolId?: string;
+  originatingFailureId?: string;
+  parentRecoveryId?: string;
+  recoveryAction: string;
+  retryCount: number;
+  degradedTransitions: number;
+  failureSeverity: 'low' | 'medium' | 'high' | 'critical';
+  recoveryLatency: number;
+  orchestrationHealth: OrchestrationHealth;
+  stabilityWarnings: string[];
+  recoveryOutcome: string;
+  escalationCount: number;
+  degradedCount: number;
+  retryStormCount: number;
+  timestamp: string;
+}
+
+export interface DiagnosticsReport {
+  failureCount: number;
+  retryCount: number;
+  degradedCount: number;
+  timeoutCount: number;
+  cancellationCount: number;
+  validationCount: number;
+  resourceCount: number;
+  stabilityWarnings: string[];
+  healthStatus: OrchestrationHealth;
 }
 
