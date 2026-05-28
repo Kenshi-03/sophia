@@ -12,8 +12,6 @@ import { createMemoryNode } from '../db/queries/memory';
 import { memoryQueue } from './client';
 import crypto from 'crypto';
 
-const redisConnection = getRedisTCPConnection();
-
 export function startWorkers() {
   const isMock = process.env.MOCK_REDIS === 'true' || (globalThis as any).MOCK_REDIS === true;
   if (isMock) {
@@ -24,6 +22,8 @@ export function startWorkers() {
   }
 
   logger.info('Starting BullMQ Workers...');
+
+  const redisConnection = getRedisTCPConnection();
 
   // 1. Calendar Sync Worker
   const calendarSyncWorker = new Worker(

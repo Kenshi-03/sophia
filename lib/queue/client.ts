@@ -9,8 +9,8 @@ class MockQueue {
   constructor(name: string) {
     this.name = name;
   }
-  async add(jobName: string, data: any) {
-    logger.info(`[MockQueue: ${this.name}] Mocked adding job: ${jobName}`, { data });
+  async add(jobName: string, data: any, options?: any) {
+    logger.info(`[MockQueue: ${this.name}] Mocked adding job: ${jobName}`, { data, options });
     return { id: `mock-job-${Math.random().toString(36).substring(2, 11)}` };
   }
   async getJobCounts() {
@@ -21,8 +21,6 @@ class MockQueue {
   }
   async close() {}
 }
-
-const redisConnection = isMock ? null : getRedisTCPConnection();
 
 const defaultJobOptions = {
   attempts: 3,
@@ -41,29 +39,37 @@ const globalForQueues = global as unknown as {
   memoryQueue?: any;
 };
 
-export const calendarSyncQueue = globalForQueues.calendarSyncQueue || 
-  (isMock ? new MockQueue('calendarSync') : new Queue('calendarSync', {
-    connection: redisConnection,
-    defaultJobOptions,
-  }));
+function createLazyQueue(name: string, globalKey: 'calendarSyncQueue' | 'cognitiveAnalysisQueue' | 'memoryQueue') {
+  let instance: any = null;
+  const init = () => {
+    if (!instance) {
+      instance = globalForQueues[globalKey] || 
+        (isMock ? new MockQueue(name) : new Queue(name, {
+          connection: getRedisTCPConnection(),
+          defaultJobOptions,
+        }));
+      if (process.env.NODE_ENV !== 'production') {
+        globalForQueues[globalKey] = instance;
+      }
+    }
+    return instance;
+  };
 
-export const cognitiveAnalysisQueue = globalForQueues.cognitiveAnalysisQueue || 
-  (isMock ? new MockQueue('cognitiveAnalysis') : new Queue('cognitiveAnalysis', {
-    connection: redisConnection,
-    defaultJobOptions,
-  }));
-
-export const memoryQueue = globalForQueues.memoryQueue || 
-  (isMock ? new MockQueue('memory') : new Queue('memory', {
-    connection: redisConnection,
-    defaultJobOptions,
-  }));
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForQueues.calendarSyncQueue = calendarSyncQueue;
-  globalForQueues.cognitiveAnalysisQueue = cognitiveAnalysisQueue;
-  globalForQueues.memoryQueue = memoryQueue;
+  return new Proxy({} as any, {
+    get(target, prop, receiver) {
+      const queue = init();
+      const value = Reflect.get(queue, prop, receiver);
+      if (typeof value === 'function') {
+        return value.bind(queue);
+      }
+      return value;
+    }
+  });
 }
+
+export const calendarSyncQueue = createLazyQueue('calendarSync', 'calendarSyncQueue');
+export const cognitiveAnalysisQueue = createLazyQueue('cognitiveAnalysis', 'cognitiveAnalysisQueue');
+export const memoryQueue = createLazyQueue('memory', 'memoryQueue');
 
 logger.info(`BullMQ Queues initialized (${isMock ? 'Mocked' : 'Real'})`, {
   queues: ['calendarSync', 'cognitiveAnalysis', 'memory'],
