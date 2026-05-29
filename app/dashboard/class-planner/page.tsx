@@ -8,14 +8,12 @@ import {
   Link as LinkIcon, 
   Clock, 
   AlertTriangle, 
-  ChevronRight, 
   History, 
   Calendar as CalendarIcon, 
   Edit3, 
   XCircle, 
   CheckCircle2, 
   RefreshCw, 
-  ArrowRight,
   BookOpen,
   User,
   Info,
@@ -61,8 +59,8 @@ interface TimelineMutationLog {
   courseSessionId?: string | null;
   mutationType: string;
   affectedSequences: number[];
-  previousState?: any;
-  newState?: any;
+  previousState?: unknown;
+  newState?: unknown;
   reason?: string | null;
   createdAt: string;
 }
@@ -93,6 +91,14 @@ interface Collision {
   courseTitle?: string;
   sequenceNumber?: number;
   severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+}
+
+function normalizeCourse(course: Course): Course {
+  return {
+    ...course,
+    sessions: Array.isArray(course.sessions) ? course.sessions : [],
+    mutationLogs: Array.isArray(course.mutationLogs) ? course.mutationLogs : [],
+  };
 }
 
 export default function ClassPlannerPage() {
@@ -165,9 +171,6 @@ export default function ClassPlannerPage() {
     meetingLink: "",
     notes: "",
   });
-
-  const [cooldownWarning, setCooldownWarning] = useState("");
-
   // Progress tracking states & forms
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [progressError, setProgressError] = useState("");
@@ -313,16 +316,17 @@ export default function ClassPlannerPage() {
       const res = await fetch("/api/academic/courses");
       const data = await res.json();
       if (data.success) {
-        setCourses(data.courses);
-        // Sync selected course if active
-        if (selectedCourse) {
-          const updated = data.courses.find((c: Course) => c.id === selectedCourse.id);
-          if (updated) {
-            setSelectedCourse(updated);
-          } else {
-            setSelectedCourse(null);
-          }
-        }
+        const nextCourses = Array.isArray(data.courses)
+          ? data.courses.map((course: Course) => normalizeCourse(course))
+          : [];
+
+        setCourses(nextCourses);
+        setSelectedCourse((current) => {
+          if (!current) return current;
+          return nextCourses.some((course: Course) => course.id === current.id)
+            ? current
+            : null;
+        });
       } else {
         setError(data.error || "Gagal mengambil daftar perkuliahan.");
       }
@@ -345,7 +349,7 @@ export default function ClassPlannerPage() {
       const res = await fetch(`/api/academic/courses/${courseId}`);
       const data = await res.json();
       if (data.success) {
-        setSelectedCourse(data.course);
+        setSelectedCourse(normalizeCourse(data.course));
       } else {
         setError(data.error || "Gagal mengambil detail perkuliahan.");
       }
@@ -429,7 +433,7 @@ export default function ClassPlannerPage() {
         });
         const data = await res.json();
         if (data.success) {
-          setCollisions(data.conflicts);
+          setCollisions(Array.isArray(data.conflicts) ? data.conflicts : []);
         }
       } catch (err) {
         console.error("Collision check failed:", err);
@@ -627,12 +631,17 @@ export default function ClassPlannerPage() {
 
   // Calculate Progress Stats
   const getProgress = (course: Course) => {
-    const completed = course.sessions.filter(
+    const sessions = Array.isArray(course.sessions) ? course.sessions : [];
+    const total = course.totalSessions || sessions.length;
+    const completed = sessions.filter(
       (s) => s.progressState === "COMPLETED" || s.progressState === "PARTIALLY_COMPLETED" || s.progressState === "SKIPPED"
     ).length;
-    const percentage = Math.round((completed / course.totalSessions) * 100);
-    return { completed, total: course.totalSessions, percentage };
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { completed, total, percentage };
   };
+
+  const selectedSessions = selectedCourse?.sessions ?? [];
+  const selectedMutationLogs = selectedCourse?.mutationLogs ?? [];
 
   return (
     <div className="space-y-6 pb-12">
@@ -802,7 +811,7 @@ export default function ClassPlannerPage() {
                 </div>
 
                 <div className="space-y-3 relative before:absolute before:top-2 before:bottom-2 before:left-6 before:w-0.5 before:bg-white/5">
-                  {selectedCourse.sessions.map((session, index) => {
+                  {selectedSessions.map((session) => {
                     const isSkippedState = session.progressState === "SKIPPED";
                     const isCancelledState = session.progressState === "CANCELLED";
                     const isCompletedState = session.progressState === "COMPLETED";
@@ -810,7 +819,6 @@ export default function ClassPlannerPage() {
                     const isPostponedState = session.progressState === "POSTPONED";
                     const isInProgressState = session.progressState === "IN_PROGRESS";
 
-                    const isSkippedStatus = session.status === "SKIPPED";
                     const isRescheduledStatus = session.status === "RESCHEDULED";
 
                     // Session type styling
@@ -1062,11 +1070,11 @@ export default function ClassPlannerPage() {
                   </h3>
                 </div>
 
-                {selectedCourse.mutationLogs.length === 0 ? (
+                {selectedMutationLogs.length === 0 ? (
                   <p className="text-xs text-[#c7c4d7]/40 font-mono py-2">No timeline mutations recorded.</p>
                 ) : (
                   <div className="space-y-3 font-mono text-[10px] text-[#c7c4d7]/80">
-                    {selectedCourse.mutationLogs.map((log) => (
+                    {selectedMutationLogs.map((log) => (
                       <div key={log.id} className="p-3 bg-white/5 rounded-xl border border-white/5 space-y-1">
                         <div className="flex justify-between items-center border-b border-white/5 pb-1">
                           <span className="font-bold text-[#8083ff]">{log.mutationType}</span>
@@ -1297,7 +1305,7 @@ export default function ClassPlannerPage() {
                   <div className="space-y-1.5 pl-5 max-h-[100px] overflow-y-auto font-mono text-[10px] text-[#c7c4d7]">
                     {collisions.map((c) => (
                       <div key={c.id}>
-                        • [{c.severity}] Overlaps with <span className="text-white">"{c.title}"</span> 
+                        • [{c.severity}] Overlaps with <span className="text-white">&quot;{c.title}&quot;</span> 
                         {c.courseTitle && ` (${c.courseTitle} - Pertemuan ${c.sequenceNumber})`}
                       </div>
                     ))}
