@@ -35,7 +35,7 @@ export async function POST(
       reason 
     } = body;
 
-    if (!action || !["SKIP", "RESCHEDULE", "SHIFT"].includes(action)) {
+    if (!action || !["SKIP", "RESCHEDULE", "SHIFT", "CANCEL"].includes(action)) {
       return NextResponse.json({ error: "Action tidak valid." }, { status: 400 });
     }
 
@@ -65,6 +65,68 @@ export async function POST(
     const hasGoogleAccount = dbUser && dbUser.accounts.length > 0;
     const isGoogleCalValid = config.googleCalendarId && !config.googleCalendarId.startsWith("local-");
 
+    if (action === "CANCEL") {
+      const prevState = {
+        status: session.status,
+        progressState: session.progressState,
+      };
+
+      await prisma.$transaction(async (tx) => {
+        // Update CourseSession status & progressState to CANCELLED
+        await tx.courseSession.update({
+          where: { id: session.id },
+          data: {
+            status: CourseSessionStatus.CANCELLED,
+            progressState: "CANCELLED", // using string literal to bypass prisma/TS type issues if type client is in transition
+            progressPercentage: 0,
+          },
+        });
+
+        // Update local Event records to CANCELLED status, do NOT delete them!
+        await tx.event.updateMany({
+          where: { courseSessionId: session.id },
+          data: {
+            status: "CANCELLED",
+            cancelledAt: new Date(),
+          },
+        });
+      });
+
+      // Fetch the events we want to delete/cancel from Google Calendar
+      const associatedEvents = await prisma.event.findMany({
+        where: { courseSessionId: session.id },
+      });
+
+      // Sync removal to Google Calendar
+      if (hasGoogleAccount && isGoogleCalValid) {
+        for (const event of associatedEvents) {
+          if (event.googleEventId) {
+            try {
+              await deleteGoogleEvent(user.id, config.googleCalendarId, event.googleEventId);
+            } catch (err) {
+              logger.error(`Failed to delete Google Calendar event ${event.googleEventId} on CANCEL:`, err);
+            }
+          }
+        }
+      }
+
+      await logTimelineMutation(
+        user.id,
+        session.courseId,
+        TimelineMutationType.CANCEL,
+        [session.sequenceNumber],
+        prevState,
+        { status: CourseSessionStatus.CANCELLED, progressState: "CANCELLED" },
+        reason || "Session cancelled.",
+        session.id
+      );
+
+      // Invalidate user cognitive briefing cache
+      await invalidateUserCache(user.id, "cognitive");
+
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "SKIP") {
       const prevState = {
         status: session.status,
@@ -77,16 +139,21 @@ export async function POST(
           where: { id: session.id },
           data: {
             status: CourseSessionStatus.SKIPPED,
+            progressState: "SKIPPED",
           },
         });
 
-        // Delete local Event record
-        await tx.event.deleteMany({
+        // Update local Event records to CANCELLED status, do NOT delete them!
+        await tx.event.updateMany({
           where: { courseSessionId: session.id },
+          data: {
+            status: "CANCELLED",
+            cancelledAt: new Date(),
+          },
         });
       });
 
-      // Fetch the events we want to delete from Google
+      // Fetch the events we want to delete/cancel from Google Calendar
       const associatedEvents = await prisma.event.findMany({
         where: { courseSessionId: session.id },
       });
@@ -110,7 +177,7 @@ export async function POST(
         TimelineMutationType.SKIP,
         [session.sequenceNumber],
         prevState,
-        { status: CourseSessionStatus.SKIPPED },
+        { status: CourseSessionStatus.SKIPPED, progressState: "SKIPPED" },
         reason || "Session skipped.",
         session.id
       );

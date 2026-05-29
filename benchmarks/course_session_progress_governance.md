@@ -4,59 +4,45 @@ This document establishes the frozen governance guidelines and specifications fo
 
 ---
 
-## 1. Core Semantics of Session Progress States
+## 1. Core Semantics of Session Progress States & UX Simplification
 
-The execution layer defines distinct operational states separate from scheduling status:
+While the backend database/API layer supports granular operational states for telemetry compatibility, **the User Interface (UX) is simplified to show and toggle binary progress**:
 
-| Progress State | Authoritative Meaning | wasActuallyHeld | progressPercentage |
-|---|---|---|---|
-| `NOT_STARTED` | Session has not begun or taken place yet. | `false` | `0` |
-| `IN_PROGRESS` | Session is currently active/ongoing. | `true` | `1% - 99%` (default `50%`) |
-| `COMPLETED` | Session was fully completed. | `true` | `100` |
-| `PARTIALLY_COMPLETED` | Session took place but was cut short or incomplete. | `true` | `1% - 99%` (user-defined) |
-| `POSTPONED` | Session was delayed and will be rescheduled later. | `false` | `0` |
-| `SKIPPED` | Session was skipped entirely with no replacement. | `false` | `0` |
-| `CANCELLED` | Session was canceled and permanently deleted. | `false` | `0` |
+- **`NOT_STARTED` (Belum Terlaksana)**: Sesi belum dilaksanakan.
+- **`COMPLETED` (Sudah Terlaksana)**: Sesi telah selesai dilaksanakan secara penuh (100% progres).
+- **`CANCELLED` (Dibatalkan)**: Sesi dibatalkan secara permanen (ditampilkan secara redup/muted di UI).
+
+The simplified client progress checklist directly transitions the state between `NOT_STARTED` and `COMPLETED`.
 
 ---
 
-## 2. Deterministic State Transition Matrix
+## 2. Deterministic Timeline Operations
 
-All progress state transitions must validate against this matrix. Invalid transitions are strictly rejected.
+Rather than bundling reschedule options inside a single progress or cancel modal, the timeline sequence distinguishes operations into explicit, sequence-aware actions:
+
+1. **Override Session**: Modifies only the selected session's parameters (e.g., date, room, link) without affecting downstream slots.
+2. **Shift Academic Sequence (Cascading Shift)**: Shifts the selected session and all subsequent downstream sessions. The engine calculates target dates strictly preserving the course's `normalWeekday` pattern (e.g., shifts a Monday class by 7 days, pushing all downstream sessions by exactly 1 week) to prevent magic-number schedule drifts.
+3. **Replacement Session**: Creates a dedicated make-up class with the same sequence number, linked to the cancelled parent session via `replacementForId`, maintaining sequence integrity.
+4. **Cancel Session**: Marks the session status and progressState as `CANCELLED` permanently instead of deleting, maintaining full audit trails and preventing sequence index corruption.
+
+---
+
+## 3. Deterministic State Transition Matrix
+
+All progress state transitions validate against this matrix. Invalid transitions are strictly rejected.
 
 ```mermaid
 stateDiagram-v2
     [*] --> NOT_STARTED
-    NOT_STARTED --> IN_PROGRESS
     NOT_STARTED --> COMPLETED
-    NOT_STARTED --> POSTPONED
-    NOT_STARTED --> SKIPPED
     NOT_STARTED --> CANCELLED
     
-    IN_PROGRESS --> COMPLETED
-    IN_PROGRESS --> PARTIALLY_COMPLETED
-    IN_PROGRESS --> POSTPONED
-    IN_PROGRESS --> SKIPPED
-    IN_PROGRESS --> CANCELLED
-    
-    POSTPONED --> IN_PROGRESS
-    POSTPONED --> COMPLETED
-    POSTPONED --> SKIPPED
-    POSTPONED --> CANCELLED
-    
-    PARTIALLY_COMPLETED --> IN_PROGRESS
-    PARTIALLY_COMPLETED --> COMPLETED
-    PARTIALLY_COMPLETED --> CANCELLED
-    
-    COMPLETED --> IN_PROGRESS : Reopen Flow
-    SKIPPED --> IN_PROGRESS : Reopen Flow
-    SKIPPED --> NOT_STARTED : Reopen Flow
-    
+    COMPLETED --> NOT_STARTED : Reopen Flow
     CANCELLED --> [*] : Terminated Lock
 ```
 
-- **Terminal State Lock**: `CANCELLED` is a final terminal state. No transitions are allowed out of `CANCELLED` directly. Rescheduling requires explicit creation/override mechanisms.
-- **Reopening Action**: Reopening a `COMPLETED` or `PARTIALLY_COMPLETED` session sets `completedAt = null`, transitions progressState back to `IN_PROGRESS` (or `NOT_STARTED`), preserves notes/metadata, and logs a `SESSION_REOPENED` mutation.
+- **Terminal State Lock**: `CANCELLED` is a final terminal state. No transitions are allowed out of `CANCELLED` directly. Rescheduling/make-up classes are handled via dedicated **Replacement Sessions**.
+- **Reopening Action**: Reopening a `COMPLETED` session sets `completedAt = null`, transitions progressState back to `NOT_STARTED`, clears `completedAt` audit parameters, and logs a `SESSION_REOPENED` mutation.
 
 ---
 

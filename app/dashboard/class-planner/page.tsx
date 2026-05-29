@@ -18,8 +18,16 @@ import {
   ArrowRight,
   BookOpen,
   User,
-  Info
+  Info,
+  Repeat,
+  ChevronsRight
 } from "lucide-react";
+
+// Helper: Convert a Date to local ISO string for datetime-local inputs (preserves timezone)
+function toLocalISOString(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 interface CourseSession {
   id: string;
@@ -42,6 +50,8 @@ interface CourseSession {
   actualEndTime?: string | null;
   executionNotes?: string | null;
   wasActuallyHeld: boolean;
+  isReplacement: boolean;
+  replacementForId?: string | null;
   updatedAt: string;
 }
 
@@ -96,6 +106,8 @@ export default function ClassPlannerPage() {
   const [showAddCourse, setShowAddCourse] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  const [showShiftSequence, setShowShiftSequence] = useState(false);
+  const [showReplacement, setShowReplacement] = useState(false);
 
   // Active items for modals
   const [activeSession, setActiveSession] = useState<CourseSession | null>(null);
@@ -131,15 +143,27 @@ export default function ClassPlannerPage() {
   const [collisions, setCollisions] = useState<Collision[]>([]);
   const [checkingCollisions, setCheckingCollisions] = useState(false);
 
-  // Cancellation/Shift Form State
+  // Cancel Form State
   const [cancelForm, setCancelForm] = useState({
-    action: "SKIP", // SKIP, RESCHEDULE, SHIFT
+    action: "CANCEL",
+    reason: "",
+  });
+
+  // Shift Sequence Form State
+  const [shiftForm, setShiftForm] = useState({
     newDate: new Date().toISOString().split("T")[0],
+    reason: "",
+  });
+
+  // Replacement Session Form State
+  const [replacementForm, setReplacementForm] = useState({
+    plannedDate: new Date().toISOString().split("T")[0],
     startTime: "08:00",
     endTime: "09:40",
-    daysToShift: 7,
-    bypassCooldown: false,
-    reason: "",
+    sessionMode: "OFFLINE",
+    room: "",
+    meetingLink: "",
+    notes: "",
   });
 
   const [cooldownWarning, setCooldownWarning] = useState("");
@@ -150,12 +174,9 @@ export default function ClassPlannerPage() {
   const [submittingProgress, setSubmittingProgress] = useState(false);
   const [progressForm, setProgressForm] = useState({
     state: "NOT_STARTED",
-    percentage: 0,
     notes: "",
     actualStartTime: "",
     actualEndTime: "",
-    allowOverride: false,
-    bypassTimestamps: false,
     reason: "",
   });
 
@@ -164,22 +185,20 @@ export default function ClassPlannerPage() {
     setProgressError("");
     
     // Auto-populate actual times with planned times as a convenient fallback
+    // Use toLocalISOString to preserve timezone for datetime-local inputs
     const todayStr = session.plannedDate.split("T")[0];
-    const plannedStartISO = `${todayStr}T${session.startTime}:00`;
-    const plannedEndISO = `${todayStr}T${session.endTime}:00`;
+    const plannedStart = new Date(`${todayStr}T${session.startTime}:00`);
+    const plannedEnd = new Date(`${todayStr}T${session.endTime}:00`);
 
     setProgressForm({
       state: session.progressState || "NOT_STARTED",
-      percentage: session.progressPercentage || 0,
       notes: session.executionNotes || "",
       actualStartTime: session.actualStartTime 
-        ? session.actualStartTime.substring(0, 16) 
-        : plannedStartISO.substring(0, 16),
+        ? toLocalISOString(new Date(session.actualStartTime))
+        : toLocalISOString(plannedStart),
       actualEndTime: session.actualEndTime 
-        ? session.actualEndTime.substring(0, 16) 
-        : plannedEndISO.substring(0, 16),
-      allowOverride: false,
-      bypassTimestamps: false,
+        ? toLocalISOString(new Date(session.actualEndTime))
+        : toLocalISOString(plannedEnd),
       reason: "",
     });
     setShowProgressModal(true);
@@ -198,16 +217,12 @@ export default function ClassPlannerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           state: progressForm.state,
-          percentage: progressForm.state === "PARTIALLY_COMPLETED" || progressForm.state === "IN_PROGRESS"
-            ? Number(progressForm.percentage)
-            : undefined,
           notes: progressForm.notes,
-          actualStartTime: progressForm.actualStartTime ? new Date(progressForm.actualStartTime).toISOString() : null,
-          actualEndTime: progressForm.actualEndTime ? new Date(progressForm.actualEndTime).toISOString() : null,
+          actualStartTime: progressForm.actualStartTime ? new Date(progressForm.actualStartTime).toISOString() : undefined,
+          actualEndTime: progressForm.actualEndTime ? new Date(progressForm.actualEndTime).toISOString() : undefined,
           reason: progressForm.reason || progressForm.notes || `State updated to ${progressForm.state}`,
           lastUpdatedAt: activeSession.updatedAt,
-          allowOverride: progressForm.allowOverride,
-          bypassTimestamps: progressForm.bypassTimestamps,
+          bypassTimestamps: progressForm.state !== "COMPLETED",
         }),
       });
 
@@ -236,19 +251,16 @@ export default function ClassPlannerPage() {
       setError("");
       
       if (isCurrentlyCompleted) {
-        if (!confirm(`Apakah Anda yakin ingin membuka kembali Sesi ${session.sequenceNumber} yang sudah selesai?`)) {
-          return;
-        }
-
+        // Toggle off: revert to NOT_STARTED
         const res = await fetch(`/api/academic/sessions/${session.id}/progress`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            state: "IN_PROGRESS",
-            percentage: 50,
+            state: "NOT_STARTED",
             notes: session.executionNotes,
-            reason: "Quick complete toggled off - reopening to in-progress",
+            reason: "Quick complete toggled off - reverted to not started",
             lastUpdatedAt: session.updatedAt,
+            bypassTimestamps: true,
           }),
         });
 
@@ -260,6 +272,7 @@ export default function ClassPlannerPage() {
           setError(data.error || "Gagal membuka kembali sesi.");
         }
       } else {
+        // Toggle on: mark COMPLETED with planned times
         const todayStr = session.plannedDate.split("T")[0];
         const plannedStartISO = new Date(`${todayStr}T${session.startTime}:00`).toISOString();
         const plannedEndISO = new Date(`${todayStr}T${session.endTime}:00`).toISOString();
@@ -463,34 +476,29 @@ export default function ClassPlannerPage() {
     }
   };
 
-  // Open Cancel/Shift Modal
+  // Open Cancel Modal
   const openCancelModal = (session: CourseSession) => {
     setActiveSession(session);
     setCancelForm({
-      action: "SKIP",
-      newDate: session.plannedDate.split("T")[0],
-      startTime: session.startTime,
-      endTime: session.endTime,
-      daysToShift: 7,
-      bypassCooldown: false,
+      action: "CANCEL",
       reason: "",
     });
-    setCooldownWarning("");
     setShowCancel(true);
   };
 
-  // Cancel/Shift Submit
+  // Cancel Submit
   const handleCancelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeSession) return;
 
     try {
       setError("");
-      setCooldownWarning("");
       const res = await fetch(`/api/academic/sessions/${activeSession.id}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cancelForm),
+        body: JSON.stringify({
+          reason: cancelForm.reason || "Sesi kuliah dibatalkan.",
+        }),
       });
       const data = await res.json();
 
@@ -501,15 +509,97 @@ export default function ClassPlannerPage() {
         }
         await fetchCourses();
       } else {
-        if (data.error === "COOLDOWN_ACTIVE") {
-          setCooldownWarning(data.message);
-        } else {
-          setError(data.error || "Gagal melakukan aksi pembatalan.");
-        }
+        setError(data.error || "Gagal membatalkan sesi.");
       }
     } catch (err) {
       console.error(err);
       setError("Kesalahan memproses pembatalan.");
+    }
+  };
+
+  // Open Shift Sequence Modal
+  const openShiftSequenceModal = (session: CourseSession) => {
+    setActiveSession(session);
+    setShiftForm({
+      newDate: session.plannedDate.split("T")[0],
+      reason: "",
+    });
+    setShowShiftSequence(true);
+  };
+
+  // Shift Sequence Submit
+  const handleShiftSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      setError("");
+      const res = await fetch(`/api/academic/sessions/${activeSession.id}/shift`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newDate: shiftForm.newDate,
+          reason: shiftForm.reason || "Pergeseran jadwal cascading.",
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setShowShiftSequence(false);
+        if (selectedCourse) {
+          await selectCourse(selectedCourse.id);
+        }
+        await fetchCourses();
+      } else {
+        setError(data.error || "Gagal menggeser urutan sesi.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan menggeser jadwal.");
+    }
+  };
+
+  // Open Replacement Session Modal
+  const openReplacementModal = (session: CourseSession) => {
+    setActiveSession(session);
+    setReplacementForm({
+      plannedDate: session.plannedDate.split("T")[0],
+      startTime: session.startTime,
+      endTime: session.endTime,
+      sessionMode: session.sessionMode,
+      room: session.room || "",
+      meetingLink: session.meetingLink || "",
+      notes: "",
+    });
+    setShowReplacement(true);
+  };
+
+  // Replacement Session Submit
+  const handleReplacementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession) return;
+
+    try {
+      setError("");
+      const res = await fetch(`/api/academic/sessions/${activeSession.id}/replacement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(replacementForm),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setShowReplacement(false);
+        if (selectedCourse) {
+          await selectCourse(selectedCourse.id);
+        }
+        await fetchCourses();
+      } else {
+        setError(data.error || "Gagal membuat sesi pengganti.");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Kesalahan membuat sesi pengganti.");
     }
   };
 
@@ -769,7 +859,7 @@ export default function ClassPlannerPage() {
 
                         {/* Session details block */}
                         <div className="flex-1 glass-panel p-4 rounded-2xl border border-white/5 bg-[#17191d]/60 hover:bg-[#17191d]/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="space-y-2 flex-1">
+                          <div className="space-y-2 flex-1 text-left">
                             {/* Line 1: Date and status indicators */}
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                               {/* Quick Complete Toggler Checkbox */}
@@ -787,7 +877,7 @@ export default function ClassPlannerPage() {
                                 </button>
                               )}
 
-                              <span className="font-bold text-white font-mono">
+                              <span className={`font-bold text-white font-mono ${isCancelledState || isSkippedState ? "line-through text-white/50" : ""}`}>
                                 {new Date(session.plannedDate).toLocaleDateString("id-ID", {
                                   weekday: "long",
                                   day: "numeric",
@@ -833,8 +923,15 @@ export default function ClassPlannerPage() {
                               )}
 
                               {isRescheduledStatus && !isPostponedState && !isSkippedState && !isCancelledState && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316] border border-[#f97316]/20 bg-[#f97316]/5 px-2 py-0.5 rounded-full">
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#f97316] border border-[#f97316]/20 bg-[#f97316]/5 px-2 py-0.5 rounded-full font-mono">
                                   Override
+                                </span>
+                              )}
+
+                              {/* Replacement badge */}
+                              {(session.isReplacement || session.sessionType === "REPLACEMENT") && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[#06b6d4] border border-[#06b6d4]/20 bg-[#06b6d4]/10 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-sm shadow-[#06b6d4]/10">
+                                  <Repeat size={10} className="stroke-[3]" /> REPLACEMENT
                                 </span>
                               )}
                             </div>
@@ -906,7 +1003,7 @@ export default function ClassPlannerPage() {
                           </div>
 
                           {/* Action controls (only for non-cancelled/non-archived courses) */}
-                          <div className="flex items-center gap-2 shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-1.5 shrink-0 md:opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[200px]">
                             {/* Track Progress Edit Button */}
                             <button
                               onClick={() => openProgressModal(session)}
@@ -921,14 +1018,28 @@ export default function ClassPlannerPage() {
                                 <button
                                   onClick={() => openOverrideModal(session)}
                                   className="p-2 border border-white/5 bg-white/5 text-[#c7c4d7] hover:text-white rounded-xl hover:bg-white/10 transition-all cursor-pointer"
-                                  title="Override Session"
+                                  title="Override Schedule"
                                 >
                                   <Edit3 size={14} />
                                 </button>
                                 <button
+                                  onClick={() => openShiftSequenceModal(session)}
+                                  className="p-2 border border-[#8083ff]/20 bg-[#8083ff]/5 text-[#8083ff] hover:bg-[#8083ff]/10 rounded-xl transition-all cursor-pointer"
+                                  title="Shift Remaining Sequence"
+                                >
+                                  <ChevronsRight size={14} />
+                                </button>
+                                <button
+                                  onClick={() => openReplacementModal(session)}
+                                  className="p-2 border border-[#06b6d4]/20 bg-[#06b6d4]/5 text-[#06b6d4] hover:bg-[#06b6d4]/10 rounded-xl transition-all cursor-pointer"
+                                  title="Create Replacement Session"
+                                >
+                                  <Repeat size={14} />
+                                </button>
+                                <button
                                   onClick={() => openCancelModal(session)}
                                   className="p-2 border border-[#ffb4ab]/20 bg-[#ffb4ab]/5 text-[#ffb4ab] hover:bg-[#ffb4ab]/10 rounded-xl transition-all cursor-pointer"
-                                  title="Cancel or Shift Remaining"
+                                  title="Cancel This Session Only"
                                 >
                                   <XCircle size={14} />
                                 </button>
@@ -1322,7 +1433,7 @@ export default function ClassPlannerPage() {
         </div>
       )}
 
-      {/* Cancel/Shift Modal */}
+      {/* Cancel Session Modal */}
       {showCancel && activeSession && (
         <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="glass-panel w-full max-w-md mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 text-left">
@@ -1341,139 +1452,21 @@ export default function ClassPlannerPage() {
                 </h3>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Cancellation Method</label>
-                <div className="grid grid-cols-1 gap-2">
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    cancelForm.action === "SKIP" ? "bg-[#ffb4ab]/5 border-[#ffb4ab]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="cancelAction" 
-                      value="SKIP" 
-                      checked={cancelForm.action === "SKIP"} 
-                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
-                      className="mt-1"
-                    />
-                    <div className="text-xs">
-                      <p className="font-bold text-white">SKIP: Skip Session</p>
-                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Pertemuan dibatalkan secara permanen, total pertemuan efektif berkurang.</p>
-                    </div>
-                  </label>
-
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    cancelForm.action === "RESCHEDULE" ? "bg-[#f97316]/5 border-[#f97316]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="cancelAction" 
-                      value="RESCHEDULE" 
-                      checked={cancelForm.action === "RESCHEDULE"} 
-                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
-                      className="mt-1"
-                    />
-                    <div className="text-xs">
-                      <p className="font-bold text-white">RESCHEDULE: Reschedule This Session Only</p>
-                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Hanya sesi ini yang dipindahkan tanggal/waktunya. Sesi-sesi setelahnya tidak berubah.</p>
-                    </div>
-                  </label>
-
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    cancelForm.action === "SHIFT" ? "bg-[#8083ff]/5 border-[#8083ff]/30" : "bg-[#111316] border-white/5 hover:bg-white/5"
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="cancelAction" 
-                      value="SHIFT" 
-                      checked={cancelForm.action === "SHIFT"} 
-                      onChange={(e) => setCancelForm({ ...cancelForm, action: e.target.value })}
-                      className="mt-1"
-                    />
-                    <div className="text-xs">
-                      <p className="font-bold text-white">SHIFT: Cascading Shift Timeline</p>
-                      <p className="text-[10px] text-[#c7c4d7]/70 mt-0.5">Seluruh sesi tersisa (termasuk yang sekarang) bergeser maju seminggu. Total sessions tetap konsisten.</p>
-                    </div>
-                  </label>
-                </div>
+              <div className="p-3 bg-white/5 rounded-2xl border border-white/5 text-xs text-[#c7c4d7]">
+                <p className="font-bold text-white mb-1">Session Info:</p>
+                <p>Course: <span className="text-white font-medium">{selectedCourse?.title}</span></p>
+                <p>Sequence: <span className="text-[#ffb4ab] font-mono font-bold">Pertemuan {activeSession.sequenceNumber}</span></p>
+                <p>Scheduled: <span className="text-white font-mono">{new Date(activeSession.plannedDate).toLocaleDateString("id-ID", { dateStyle: 'medium' })}</span></p>
               </div>
 
-              {/* Conditional Inputs for Rescheduling */}
-              {cancelForm.action === "RESCHEDULE" && (
-                <div className="grid grid-cols-3 gap-2 border-t border-white/5 pt-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Date</label>
-                    <input
-                      type="date"
-                      value={cancelForm.newDate}
-                      onChange={(e) => setCancelForm({ ...cancelForm, newDate: e.target.value })}
-                      required
-                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Start</label>
-                    <input
-                      type="text"
-                      value={cancelForm.startTime}
-                      onChange={(e) => setCancelForm({ ...cancelForm, startTime: e.target.value })}
-                      required
-                      placeholder="HH:MM"
-                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">End</label>
-                    <input
-                      type="text"
-                      value={cancelForm.endTime}
-                      onChange={(e) => setCancelForm({ ...cancelForm, endTime: e.target.value })}
-                      required
-                      placeholder="HH:MM"
-                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-2 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Conditional Cooldown Warnings for Cascading Shift */}
-              {cancelForm.action === "SHIFT" && (
-                <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Days to Shift</label>
-                    <input
-                      type="number"
-                      value={cancelForm.daysToShift}
-                      onChange={(e) => setCancelForm({ ...cancelForm, daysToShift: Number(e.target.value) })}
-                      required
-                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-[#e2e2e6] focus:outline-none font-mono"
-                    />
-                  </div>
-                  {cooldownWarning && (
-                    <div className="col-span-2 p-3 bg-[#ffb4ab]/10 border border-[#ffb4ab]/20 rounded-xl space-y-2 mt-2">
-                      <div className="text-[10px] text-[#ffb4ab] font-sans flex items-start gap-1">
-                        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                        <span>{cooldownWarning}</span>
-                      </div>
-                      <label className="flex items-center gap-2 text-[10px] text-white font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={cancelForm.bypassCooldown}
-                          onChange={(e) => setCancelForm({ ...cancelForm, bypassCooldown: e.target.checked })}
-                        />
-                        Bypass cooldown protection
-                      </label>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1 border-t border-white/5 pt-4">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Reason/Notes</label>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Cancellation Reason</label>
                 <input
                   type="text"
                   value={cancelForm.reason}
                   onChange={(e) => setCancelForm({ ...cancelForm, reason: e.target.value })}
-                  placeholder="e.g. Dosen berhalangan hadir..."
+                  required
+                  placeholder="e.g., Dosen berhalangan hadir..."
                   className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
                 />
               </div>
@@ -1484,13 +1477,215 @@ export default function ClassPlannerPage() {
                   onClick={() => setShowCancel(false)}
                   className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-[#ffb4ab] text-[#601410] text-xs font-semibold rounded-xl hover:bg-[#ffb4ab]/90 transition-all cursor-pointer active:scale-95"
                 >
-                  Confirm Action
+                  Confirm Cancellation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Shift Sequence Modal */}
+      {showShiftSequence && activeSession && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-md mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 text-left">
+            <button
+              onClick={() => setShowShiftSequence(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleShiftSubmit} className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <ChevronsRight size={18} className="text-[#8083ff]" />
+                <h3 className="font-bold text-sm text-white">
+                  Cascading Shift Remaining Sequence
+                </h3>
+              </div>
+
+              <div className="p-3 bg-white/5 rounded-2xl border border-white/5 text-xs text-[#c7c4d7] space-y-1">
+                <p className="font-bold text-white mb-1">Shift Origin Info:</p>
+                <p>Sequence: <span className="text-[#8083ff] font-mono font-bold">Pertemuan {activeSession.sequenceNumber}</span> and downstream sessions</p>
+                <p>Current Date: <span className="text-white font-mono">{new Date(activeSession.plannedDate).toLocaleDateString("id-ID", { dateStyle: 'medium' })}</span></p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">New Target Date for This Session</label>
+                <input
+                  type="date"
+                  value={shiftForm.newDate}
+                  onChange={(e) => setShiftForm({ ...shiftForm, newDate: e.target.value })}
+                  required
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                />
+                <p className="text-[9px] text-[#c7c4d7]/60 mt-1">
+                  Note: Subsequent sessions will automatically shift to preserve original weekday scheduling patterns.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Reason for Shifting</label>
+                <input
+                  type="text"
+                  value={shiftForm.reason}
+                  onChange={(e) => setShiftForm({ ...shiftForm, reason: e.target.value })}
+                  required
+                  placeholder="e.g., Libur Nasional, Rapat Jurusan..."
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowShiftSequence(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#8083ff] text-white text-xs font-semibold rounded-xl hover:bg-[#8083ff]/90 transition-all cursor-pointer shadow-lg shadow-[#8083ff]/10 active:scale-95"
+                >
+                  Apply Cascade Shift
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Replacement Session Modal */}
+      {showReplacement && activeSession && (
+        <div className="fixed inset-0 bg-[#0b0c0e]/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="glass-panel w-full max-w-lg mx-4 rounded-3xl p-6 relative shadow-2xl border border-white/10 max-h-[90vh] overflow-y-auto text-left">
+            <button
+              onClick={() => setShowReplacement(false)}
+              className="absolute top-4 right-4 text-[#c7c4d7] hover:text-white p-1 hover:bg-white/5 rounded-lg transition-all cursor-pointer"
+            >
+              <XCircle size={18} />
+            </button>
+
+            <form onSubmit={handleReplacementSubmit} className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                <Repeat size={18} className="text-[#06b6d4]" />
+                <h3 className="font-bold text-sm text-white">
+                  Create Make-Up / Replacement Session
+                </h3>
+              </div>
+
+              <div className="p-3 bg-[#06b6d4]/5 rounded-2xl border border-[#06b6d4]/20 text-xs text-[#c7c4d7] space-y-1">
+                <p className="font-bold text-white mb-1">Replacement For:</p>
+                <p>Sequence: <span className="text-[#06b6d4] font-mono font-bold">Pertemuan {activeSession.sequenceNumber}</span></p>
+                <p>Original Scheduled Date: <span className="text-white font-mono">{new Date(activeSession.plannedDate).toLocaleDateString("id-ID", { dateStyle: 'medium' })}</span></p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Date</label>
+                  <input
+                    type="date"
+                    value={replacementForm.plannedDate}
+                    onChange={(e) => setReplacementForm({ ...replacementForm, plannedDate: e.target.value })}
+                    required
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Start Time</label>
+                  <input
+                    type="text"
+                    value={replacementForm.startTime}
+                    onChange={(e) => setReplacementForm({ ...replacementForm, startTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">End Time</label>
+                  <input
+                    type="text"
+                    value={replacementForm.endTime}
+                    onChange={(e) => setReplacementForm({ ...replacementForm, endTime: e.target.value })}
+                    required
+                    placeholder="HH:MM"
+                    className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Session Mode</label>
+                <select
+                  value={replacementForm.sessionMode}
+                  onChange={(e) => setReplacementForm({ ...replacementForm, sessionMode: e.target.value })}
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                >
+                  <option value="OFFLINE">OFFLINE</option>
+                  <option value="ONLINE">ONLINE</option>
+                  <option value="HYBRID">HYBRID</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {replacementForm.sessionMode !== "ONLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Room/Building</label>
+                    <input
+                      type="text"
+                      value={replacementForm.room}
+                      onChange={(e) => setReplacementForm({ ...replacementForm, room: e.target.value })}
+                      placeholder="e.g. Ruang Rapat Lt. 2"
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30"
+                    />
+                  </div>
+                )}
+                {replacementForm.sessionMode !== "OFFLINE" && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Meeting Link</label>
+                    <input
+                      type="url"
+                      value={replacementForm.meetingLink}
+                      onChange={(e) => setReplacementForm({ ...replacementForm, meetingLink: e.target.value })}
+                      placeholder="e.g. https://meet.google.com/..."
+                      className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Notes</label>
+                <textarea
+                  value={replacementForm.notes}
+                  onChange={(e) => setReplacementForm({ ...replacementForm, notes: e.target.value })}
+                  placeholder="e.g., Sesi make-up sebagai pengganti pertemuan yang terlewat..."
+                  rows={2}
+                  className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setShowReplacement(false)}
+                  className="px-4 py-2 border border-white/5 bg-white/5 text-xs font-semibold rounded-xl text-[#c7c4d7] hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#06b6d4] text-white text-xs font-semibold rounded-xl hover:bg-[#06b6d4]/90 transition-all cursor-pointer shadow-lg shadow-[#06b6d4]/10 active:scale-95"
+                >
+                  Create Replacement
                 </button>
               </div>
             </form>
@@ -1530,49 +1725,21 @@ export default function ClassPlannerPage() {
 
               {/* Progress State Selection */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Operational Execution State</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Operational Execution State</label>
                 <select
                   value={progressForm.state}
                   onChange={(e) => setProgressForm({ ...progressForm, state: e.target.value })}
                   className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
                 >
-                  <option value="NOT_STARTED">NOT_STARTED — Belum Dimulai</option>
-                  <option value="IN_PROGRESS">IN_PROGRESS — Dalam Proses</option>
-                  <option value="COMPLETED">COMPLETED — Selesai Penuh (100%)</option>
-                  <option value="PARTIALLY_COMPLETED">PARTIALLY_COMPLETED — Selesai Sebagian (1-99%)</option>
-                  <option value="POSTPONED">POSTPONED — Ditunda / Jadwal Ulang</option>
-                  <option value="SKIPPED">SKIPPED — Dilewati Tanpa Pengganti</option>
-                  <option value="CANCELLED">CANCELLED — Dibatalkan Permanen</option>
+                  <option value="NOT_STARTED">Belum Terlaksana (NOT_STARTED)</option>
+                  <option value="COMPLETED">Sudah Terlaksana (COMPLETED)</option>
                 </select>
               </div>
-
-              {/* Percentage Slider (shown for partial/in-progress) */}
-              {(progressForm.state === "PARTIALLY_COMPLETED" || progressForm.state === "IN_PROGRESS") && (
-                <div className="space-y-2 border border-white/5 bg-white/5 p-3 rounded-xl">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[#c7c4d7]">Completion Percentage</span>
-                    <span className="font-bold text-[#8083ff] font-mono">{progressForm.percentage}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={progressForm.state === "PARTIALLY_COMPLETED" ? 1 : 0}
-                    max={99}
-                    value={progressForm.percentage}
-                    onChange={(e) => setProgressForm({ ...progressForm, percentage: Number(e.target.value) })}
-                    className="w-full accent-[#8083ff] cursor-pointer"
-                  />
-                  <p className="text-[9px] text-[#c7c4d7]/60">
-                    {progressForm.state === "PARTIALLY_COMPLETED" 
-                      ? "Partially completed memerlukan progres antara 1% - 99%." 
-                      : "In-progress default adalah 50%."}
-                  </p>
-                </div>
-              )}
 
               {/* Execution Timestamps */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Actual Start Date & Time</label>
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Actual Start Date & Time</label>
                   <input
                     type="datetime-local"
                     value={progressForm.actualStartTime}
@@ -1581,7 +1748,7 @@ export default function ClassPlannerPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Actual End Date & Time</label>
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Actual End Date & Time</label>
                   <input
                     type="datetime-local"
                     value={progressForm.actualEndTime}
@@ -1593,7 +1760,7 @@ export default function ClassPlannerPage() {
 
               {/* Execution Notes */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Execution Notes / Report</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Execution Notes / Report</label>
                 <textarea
                   value={progressForm.notes}
                   onChange={(e) => setProgressForm({ ...progressForm, notes: e.target.value })}
@@ -1605,7 +1772,7 @@ export default function ClassPlannerPage() {
 
               {/* Reason (Audit Mutation Log) */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70">Reason for Mutation / Correction</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-[#c7c4d7]/70 font-mono">Reason for Mutation / Correction</label>
                 <input
                   type="text"
                   value={progressForm.reason}
@@ -1613,29 +1780,6 @@ export default function ClassPlannerPage() {
                   placeholder="e.g. Koreksi input progress oleh mahasiswa..."
                   className="w-full bg-[#111316] border border-white/5 rounded-xl px-3 py-2 text-xs text-[#e2e2e6] focus:outline-none focus:ring-1 focus:ring-[#c0c1ff]/30 font-sans"
                 />
-              </div>
-
-              {/* Special overrides flags */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-white/5 pt-3">
-                <label className="flex items-center gap-2 text-[10px] text-white font-bold cursor-pointer hover:text-white/80 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={progressForm.allowOverride}
-                    onChange={(e) => setProgressForm({ ...progressForm, allowOverride: e.target.checked })}
-                    className="rounded"
-                  />
-                  <span>Bypass governance locked period</span>
-                </label>
-
-                <label className="flex items-center gap-2 text-[10px] text-white font-bold cursor-pointer hover:text-white/80 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={progressForm.bypassTimestamps}
-                    onChange={(e) => setProgressForm({ ...progressForm, bypassTimestamps: e.target.checked })}
-                    className="rounded"
-                  />
-                  <span>Bypass actual times constraint</span>
-                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-white/5">

@@ -35,7 +35,8 @@ export const ALLOWED_TRANSITIONS: Record<SessionProgressState, SessionProgressSt
     SessionProgressState.CANCELLED
   ],
   COMPLETED: [
-    SessionProgressState.IN_PROGRESS // Reopening
+    SessionProgressState.IN_PROGRESS, // Reopening
+    SessionProgressState.NOT_STARTED  // Reopening directly to NOT_STARTED
   ],
   SKIPPED: [
     SessionProgressState.IN_PROGRESS, // Reopening

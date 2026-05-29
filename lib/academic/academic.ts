@@ -4,8 +4,10 @@ import {
   CourseSessionStatus, 
   CourseSessionMode, 
   TimelineMutationType,
-  CognitiveCategoryType
+  CognitiveCategoryType,
+  Weekday
 } from "@prisma/client";
+import { WEEKDAY_REVERSE_MAP } from "./academic-sequence-shift";
 import { getOrCreateAcademicConfig } from "../settings/category-seeding";
 import { logger } from "../logger";
 
@@ -87,6 +89,8 @@ export async function generateSemesterTimeline(params: CourseCreationParams) {
   const { course, sessions: sessionsData, sessionEventPairs } = await prisma.$transaction(
     async (tx) => {
       // 1. Create Course
+      const baseDate = new Date(firstSessionDate);
+      const normalWeekday = WEEKDAY_REVERSE_MAP[baseDate.getDay()] || Weekday.MONDAY;
       const course = await tx.course.create({
         data: {
           userId,
@@ -99,12 +103,12 @@ export async function generateSemesterTimeline(params: CourseCreationParams) {
           defaultLocation: defaultLocation || null,
           defaultMeetingLink: defaultMeetingLink || null,
           categoryType: CognitiveCategoryType.ACADEMIC,
+          normalWeekday,
         },
       });
 
       const sessionsData = [];
       const sessionEventPairs: SessionEventPair[] = [];
-      const baseDate = new Date(firstSessionDate);
 
       // 2. Generate CourseSessions
       for (let i = 0; i < totalSessions; i++) {

@@ -39,9 +39,13 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Parse execution ISO timestamps to Date objects if provided
-    const parsedStart = actualStartTime ? new Date(actualStartTime) : null;
-    const parsedEnd = actualEndTime ? new Date(actualEndTime) : null;
+    // Parse execution ISO timestamps to Date objects if provided, preserving undefined if not sent
+    const parsedStart = actualStartTime !== undefined 
+      ? (actualStartTime ? new Date(actualStartTime) : null) 
+      : undefined;
+    const parsedEnd = actualEndTime !== undefined 
+      ? (actualEndTime ? new Date(actualEndTime) : null) 
+      : undefined;
 
     try {
       const updatedSession = await updateSessionProgress({

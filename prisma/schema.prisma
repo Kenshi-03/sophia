@@ -140,6 +140,9 @@ model Event {
   courseSessionId String?
   courseSession   CourseSession? @relation(fields: [courseSessionId], references: [id], onDelete: Cascade)
 
+  status        String?                @default("CONFIRMED")
+  cancelledAt   DateTime?
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -442,6 +445,19 @@ enum TimelineMutationType {
   SESSION_SKIPPED
   SESSION_REOPENED
   SESSION_PROGRESS_UPDATED
+  SEQUENCE_SHIFT
+  REPLACEMENT_SESSION_CREATED
+  OVERRIDE_SESSION
+}
+
+enum Weekday {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
 }
 
 model Course {
@@ -457,6 +473,7 @@ model Course {
   defaultLocation    String?
   defaultMeetingLink String?
   timelineVersion    Int                   @default(1)
+  normalWeekday      Weekday               @default(MONDAY)
   deletedAt          DateTime?
 
   createdAt          DateTime              @default(now())
@@ -493,6 +510,11 @@ model CourseSession {
   executionNotes      String?
   executionMetadata   Json?
   wasActuallyHeld     Boolean              @default(false)
+
+  isReplacement       Boolean              @default(false)
+  replacementForId    String?
+  replacementFor      CourseSession?       @relation("ReplacementSessions", fields: [replacementForId], references: [id], onDelete: SetNull)
+  replacements        CourseSession[]      @relation("ReplacementSessions")
 
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt

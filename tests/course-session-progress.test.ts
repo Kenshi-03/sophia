@@ -85,10 +85,10 @@ describe("Course Session Progress Tracking Tests", () => {
       expect(validateProgressTransition(SessionProgressState.IN_PROGRESS, SessionProgressState.COMPLETED)).toBe(true);
       expect(validateProgressTransition(SessionProgressState.POSTPONED, SessionProgressState.COMPLETED)).toBe(true);
       expect(validateProgressTransition(SessionProgressState.COMPLETED, SessionProgressState.IN_PROGRESS)).toBe(true); // Reopening
+      expect(validateProgressTransition(SessionProgressState.COMPLETED, SessionProgressState.NOT_STARTED)).toBe(true); // Direct Reopening
     });
 
     it("should reject invalid transitions", () => {
-      expect(validateProgressTransition(SessionProgressState.COMPLETED, SessionProgressState.NOT_STARTED)).toBe(false);
       expect(validateProgressTransition(SessionProgressState.CANCELLED, SessionProgressState.COMPLETED)).toBe(false);
       expect(validateProgressTransition(SessionProgressState.SKIPPED, SessionProgressState.COMPLETED)).toBe(false);
     });
